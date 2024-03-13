@@ -12,10 +12,10 @@ class AmazonSpiderTest(unittest.TestCase):
 
     def test_spider(self):
         self.crawler_process.crawl(AmazonSpider,
-                                   url='https://www.amazon.com/Apple-iPhone-11-64GB-Unlocked/dp/B07ZPKZSSC',
+                                   url='https://www.amazon.com/Lenovo-IdeaPad-Display-Processor-82K20015US/dp/B08YKHGKTV/ref=cm_cr_arp_d_product_top?ie=UTF8&th=1',
                                    job_id='123')
         
-        self.crawler_process.start()  # The script will block here until the crawling is finished
+        self.crawler_process.start()
 
 
 if __name__ == '__main__':

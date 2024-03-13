@@ -1,6 +1,6 @@
 from sqlmodel import Session, select
 from ..models.job import Job
-from ..database.database import engine
+from ..config.database import engine
 from ..schemas import schemas
 
 
