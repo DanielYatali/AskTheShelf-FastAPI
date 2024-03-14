@@ -37,10 +37,15 @@ async def get_job(job_id: str):
 
 # Create job
 @router.post("/jobs")
-async def create_job(job: dict):
-    job_id = job_collection.insert_one(job).inserted_id
-    job = job_collection.find_one({"_id": job_id})
-    return job_serializer(job)
+async def create_job(job: Job):
+    job_json = job.model_dump(by_alias=True)
+    if job_collection.find_one({"_id": job_json["_id"]}):
+        raise HTTPException(status_code=400, detail="Job ID already exists")
+    result = job_collection.insert_one(job_json)
+
+    inserted_job = job_collection.find_one({"_id": result.inserted_id})
+    return inserted_job
+
 
 
 # Update job
@@ -93,40 +98,9 @@ async def generate_product_review(product):
         raise
 
 
-# async def update_job(job_id: str, job: dict):
-#     # Update the job
-#     job_collection.update_one({"_id": ObjectId(job_id)}, {"$set": job})
-#     product = job["result"]
-#     job = job_collection.find_one({"_id": ObjectId(job_id)})
-#     # Create a new product
-#     product_id = product_collection.insert_one(product).inserted_id
-#     product = product_collection.find_one({"_id": product_id})
-#
-#     # Generate a review
-#     client = OpenAI()
-#     # read prompt from the prompts folder
-#     prompt = ""
-#     with open('prompts/review-prompt.txt', 'r') as file:
-#         prompt = file.read()
-#
-#     completion = client.chat.completions.create(
-#         model="gpt-3.5-turbo",
-#         messages=[
-#             {"role": "system", "content": prompt},
-#             {"role": "user",
-#              "content": "Generate a comprehensive report based on the following product data: " + str(product)}
-#         ]
-#     )
-#     result = completion.choices[0].message
-#
-#     product_collection.update_one({"_id": ObjectId(product_id)},
-#                                   {"$set": {"generated_review": result}})
-#     product = product_collection.find_one({"_id": ObjectId(product_id)})
-#     return product
-
 
 @router.post("/scrape/amazon")
-async def scrape_amazon(job: dict):
+async def scrape_amazon(job: Job):
     job["status"] = "started"
     job["start_time"] = str(datetime.utcnow())
     job["end_time"] = ""

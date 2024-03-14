@@ -1,10 +1,11 @@
 from pydantic import BaseModel
+from typing import Optional
+from pydantic import Field
 
 
 class Product(BaseModel):
-    id: str
+    id: Optional[str] = Field(alias='_id')
     job_id: str
-    product_id: str
     domain: str
     title: str
     description: str
@@ -16,7 +17,9 @@ class Product(BaseModel):
     rating: float
     created_at: str
     updated_at: str
-    generated_review: str
+    similar_products: Optional[list] = []
+    generated_review: Optional[str] = ""
+
 
 
 

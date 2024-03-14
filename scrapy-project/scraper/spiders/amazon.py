@@ -138,6 +138,35 @@ def extract_asin_from_url(url):
     return match.group(1) if match else None
 
 
+def get_similar_products(product_asin, response):
+    first_row = response.css('._product-comparison-desktop_desktopFaceoutStyle_asin__2eMLv')
+    second_row = response.css('._product-comparison-desktop_desktopFaceoutStyle_tableAttribute__2V-c2 > span.a-price')
+    products = []
+    for prod in first_row:
+        asin = prod.css('div.a-image-container::attr(id)').re_first(r'B0[A-Z0-9]+')
+        product = {
+            'title': safe_extract(prod, 'img::attr(alt)', query_type='css', extract_first=True, default_value=''),
+            'image': safe_extract(prod, 'img::attr(src)', query_type='css', extract_first=True, default_value=''),
+            'asin': asin,
+            'url': f'https://www.amazon.com/dp/{asin}'
+        }
+        products.append(product)
+    prices = []
+    for i, prod in enumerate(second_row):
+        prices.append(
+            safe_extract(prod, 'span.a-offscreen::text', query_type='css', extract_first=True, default_value=''))
+    if len(prices) != len(products):
+        while len(prices) != len(products):
+            products.pop(0)
+    for i, prod in enumerate(products):
+        prod['price'] = prices[i]
+    for prod in products:
+        if prod['asin'] == product_asin:
+            products.remove(prod)
+            break
+    return products
+
+
 # def get_reviews_on_review_page(response):
 
 class AmazonSpider(scrapy.Spider):
@@ -189,9 +218,8 @@ class AmazonSpider(scrapy.Spider):
             if review['author'] not in [r['author'] for r in reviews]:
                 reviews.append(review)
         product = Product(
-            id=self.product['id'],
+            _id=self.product['_id'],
             job_id=self.job_id,
-            product_id=self.product['id'],
             domain=self.product['domain'],
             title=self.product['title'],
             description=self.product['description'],
@@ -203,13 +231,14 @@ class AmazonSpider(scrapy.Spider):
             reviews=reviews,
             created_at=self.product['created_at'],
             updated_at=self.product['updated_at'],
+            similar_products=self.product['similar_products'],
             generated_review='',
         )
 
         # merge all the reviews check the author to avoid duplicates
 
         job = Job(
-            id=self.job_id,
+            _id=self.job_id,
             status="completed",
             end_time=datetime.datetime.utcnow().isoformat(),
             start_time=datetime.datetime.utcnow().isoformat(),
@@ -220,13 +249,10 @@ class AmazonSpider(scrapy.Spider):
         return job.model_dump()
         # post request to update the job
 
-
-
     def parse(self, response):
         self.product = {
-            "id": extract_asin_from_url(response.url),
+            "_id": extract_asin_from_url(response.url),
             "job_id": self.job_id,
-            "product_id": extract_asin_from_url(response.url),
             "domain": response.url.split('/')[2],
             "title": get_product_title(response),
             "description": get_product_description(response),
@@ -236,9 +262,11 @@ class AmazonSpider(scrapy.Spider):
             "features": get_features(response),
             "rating": get_rating(response),
             "created_at": datetime.datetime.utcnow().isoformat(),
+            "similar_products": get_similar_products(self.product["id"], response),
             "updated_at": datetime.datetime.utcnow().isoformat(),
             "generated_review": '',
         }
+        # similar_products = get_similar_products(self.product["id"], response)
         self.default_reviews = get_reviews(response, [])
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
@@ -249,30 +277,6 @@ class AmazonSpider(scrapy.Spider):
                 body=json.dumps(job),
                 headers={'Content-Type': 'application/json'},
             )
-        # product = Product(
-        #     id=extract_asin_from_url(response.url),
-        #     job_id=self.job_id,
-        #     product_id=extract_asin_from_url(response.url),
-        #     domain=response.url.split('/')[2],
-        #     title=get_product_title(response),
-        #     description=get_product_description(response),
-        #     price=get_price(response),
-        #     image_url=get_image_url(response),
-        #     specs=get_product_specs(response),
-        #     features=get_features(response),
-        #     rating=get_rating(response),
-        #     reviews=get_reviews(response, []),
-        #     created_at=datetime.datetime.utcnow().isoformat(),
-        #     updated_at=datetime.datetime.utcnow().isoformat(),
-        #     generated_review='',
-        # )
-        # query param for crictical reviews ?filterByStar=critical&reviewerType=avp_only_reviews
-        # get the critical reviews
-
-        # critical_reviews_url = f"https://{product.domain}/product-reviews/{product.product_id}/?filterByStar=critical&reviewerType=avp_only_reviews"
-        #
-        # yield scrapy.Request(critical_reviews_url, callback=self.parse_critical_reviews,
-        #                      meta={'product': product, 'proxy': self.proxy})
 
     def parse_critical_reviews(self, response):
         critical_reviews = get_reviews(response, [])
@@ -299,4 +303,3 @@ class AmazonSpider(scrapy.Spider):
                 body=json.dumps(job),
                 headers={'Content-Type': 'application/json'},
             )
-
