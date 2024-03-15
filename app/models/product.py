@@ -4,7 +4,7 @@ from pydantic import Field
 
 
 class Product(BaseModel):
-    id: Optional[str] = Field(alias='_id')
+    id: str
     job_id: str
     domain: str
     title: str

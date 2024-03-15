@@ -1,21 +1,19 @@
 import os
 import subprocess
 from datetime import datetime
-
 from fastapi import APIRouter, HTTPException
 from openai import OpenAI
-
 from ..models.job import Job
 from ..schemas.schemas import list_jobs_serializer, job_serializer, product_serializer, list_products_serializer
 from ..config.database import job_collection
 from ..config.database import product_collection
+from ..config.database import test_collection
 from bson import ObjectId
 import aiofiles
-# import the env variables
 from dotenv import load_dotenv
+from ..utils.embedding_utils import create_embedding, find_similar_embeddings
 
 load_dotenv()
-
 router = APIRouter()
 
 
@@ -39,6 +37,7 @@ async def get_job(job_id: str):
 @router.post("/jobs")
 async def create_job(job: Job):
     job_json = job.model_dump(by_alias=True)
+    job_json.pop("_id", None)
     if job_collection.find_one({"_id": job_json["_id"]}):
         raise HTTPException(status_code=400, detail="Job ID already exists")
     result = job_collection.insert_one(job_json)
@@ -47,25 +46,30 @@ async def create_job(job: Job):
     return inserted_job
 
 
-
 # Update job
 @router.put("/jobs/{job_id}")
-async def update_job(job_id: str, job: dict):
+async def update_job(job_id: str, job: Job):
     try:
         # Update the job
+        job = job.model_dump()
         job_collection.update_one({"_id": ObjectId(job_id)}, {"$set": job})
         product_data = job.get("result")
-
         if not product_data:
             raise HTTPException(status_code=400, detail="No product data found in job")
+        product_id = product_data["id"]
 
+        existing_product = product_collection.find_one({"_id": product_id})
+        if existing_product:
+            product_collection.update_one({"_id": product_id}, {"$set": product_data})
+        else:
+            product_collection.insert_one({
+                "_id": product_id,
+                **product_data
+            })
         generated_review = await generate_product_review(product_data)
-        product_data["generated_review"] = generated_review
-        # Create a new product
-        product_id = product_collection.insert_one(product_data).inserted_id
-        return {
-            "success": True,
-        }
+        embedding = await create_embedding(generated_review)
+        product_collection.update_one({"_id": product_id}, {"$set": {"generated_review": generated_review,
+                                                                     "embedding": embedding}})
     except Exception as e:
         # Log the exception (logging mechanism to be configured as needed)
         print(f"An error occurred: {e}")
@@ -98,15 +102,11 @@ async def generate_product_review(product):
         raise
 
 
-
 @router.post("/scrape/amazon")
-async def scrape_amazon(job: Job):
-    job["status"] = "started"
-    job["start_time"] = str(datetime.utcnow())
-    job["end_time"] = ""
-    job["result"] = {}
-    job["error"] = {}
-
+async def scrape_amazon(url: str):
+    job = Job(url=url)
+    job = job.model_dump(by_alias=True)
+    job.pop("_id", None)
     job_id = job_collection.insert_one(job).inserted_id
     job_result = job_collection.find_one({"_id": job_id})
     job_data = job_serializer(job_result)
@@ -168,3 +168,14 @@ async def get_product(product_id: str):
     if product:
         return product_serializer(product)
     raise HTTPException(status_code=404, detail="Product not found")
+
+
+@router.get("/query")
+async def get_query(query: str):
+    embedding = await create_embedding(query)
+    excludes = [
+        "reviews",
+        "embedding",
+        ]
+    documents = await find_similar_embeddings(product_collection, embedding, excludes)
+    return documents

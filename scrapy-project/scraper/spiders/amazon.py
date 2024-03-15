@@ -218,7 +218,7 @@ class AmazonSpider(scrapy.Spider):
             if review['author'] not in [r['author'] for r in reviews]:
                 reviews.append(review)
         product = Product(
-            _id=self.product['_id'],
+            id=self.product['id'],
             job_id=self.job_id,
             domain=self.product['domain'],
             title=self.product['title'],
@@ -238,7 +238,7 @@ class AmazonSpider(scrapy.Spider):
         # merge all the reviews check the author to avoid duplicates
 
         job = Job(
-            _id=self.job_id,
+            id=self.job_id,
             status="completed",
             end_time=datetime.datetime.utcnow().isoformat(),
             start_time=datetime.datetime.utcnow().isoformat(),
@@ -246,12 +246,15 @@ class AmazonSpider(scrapy.Spider):
             url=self.start_urls[0],
             error={}
         )
-        return job.model_dump()
-        # post request to update the job
+        return job.model_dump(mode="json")
+
+    def close_job(self, response):
+        # Logic to handle the response and close the job
+        self.close(self, reason="Job completed successfully")
 
     def parse(self, response):
         self.product = {
-            "_id": extract_asin_from_url(response.url),
+            "id": extract_asin_from_url(response.url),
             "job_id": self.job_id,
             "domain": response.url.split('/')[2],
             "title": get_product_title(response),
@@ -262,11 +265,11 @@ class AmazonSpider(scrapy.Spider):
             "features": get_features(response),
             "rating": get_rating(response),
             "created_at": datetime.datetime.utcnow().isoformat(),
-            "similar_products": get_similar_products(self.product["id"], response),
             "updated_at": datetime.datetime.utcnow().isoformat(),
             "generated_review": '',
         }
-        # similar_products = get_similar_products(self.product["id"], response)
+        similar_products = get_similar_products(self.product["id"], response)
+        self.product['similar_products'] = similar_products
         self.default_reviews = get_reviews(response, [])
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
@@ -276,6 +279,7 @@ class AmazonSpider(scrapy.Spider):
                 method='PUT',
                 body=json.dumps(job),
                 headers={'Content-Type': 'application/json'},
+                callback=self.close_job
             )
 
     def parse_critical_reviews(self, response):

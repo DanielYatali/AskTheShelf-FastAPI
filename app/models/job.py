@@ -7,19 +7,13 @@ from pydantic import Field
 
 
 class Job(BaseModel):
-    id: Optional[str] = Field(None, alias='_id')
+    id: Optional[str] = Field(None)
     status: str = "Pending"
     start_time: datetime = Field(default_factory=datetime.now)
     url: str
     end_time: Optional[datetime] = None
     result: Optional[Dict] = Field(default_factory=dict)
     error: Optional[Dict] = Field(default_factory=dict)
-
-    @field_validator("id")
-    def set_id(cls, v):
-        if v:
-            return str(v)
-        return str(ObjectId())
 
     class Config:
         arbitrary_types_allowed = True
