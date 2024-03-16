@@ -1,19 +1,25 @@
 import os
 import httpx
 from fastapi import HTTPException
+from openai import OpenAI
 
 
 async def find_similar_embeddings(collection, embedding: list, excludes: list):
-    documents = collection.aggregate([
-        {"$vectorSearch": {
-            "queryVector": embedding,
-            "path": "embedding",
-            "numCandidates": 100,
-            "limit": 5,
-            "index": "vector_index",
-        }},
-        {"$project": {field: 0 for field in excludes}}
-    ])
+    pipeline = [
+        {
+            "$vectorSearch": {
+                "queryVector": embedding,
+                "path": "embedding",
+                "numCandidates": 100,
+                "limit": 1,
+                "index": "vector_index",
+            }
+        },
+        {"$project": {"score": {"$meta": "vectorSearchScore"},
+                      **{field: 0 for field in excludes}}},
+    ]
+
+    documents = collection.aggregate(pipeline)
     return list(documents)
 
 
@@ -36,11 +42,6 @@ async def create_embedding(query: str):
         response_data = response.json()
         embedding = response_data['data'][0]['embedding']
         return embedding
-        # embedding_document = {
-        #     'embedding': response_data['data'][0]['embedding'],
-        #     ** data
-        # }
-        # result = test_collection.insert_one(embedding_document)
-        # print(f'Document inserted with id: {result.inserted_id}')
 
-        # return result
+
+

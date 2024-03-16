@@ -1,3 +1,4 @@
+import asyncio
 import os
 import subprocess
 from datetime import datetime
@@ -8,10 +9,12 @@ from ..schemas.schemas import list_jobs_serializer, job_serializer, product_seri
 from ..config.database import job_collection
 from ..config.database import product_collection
 from ..config.database import test_collection
+
 from bson import ObjectId
 import aiofiles
 from dotenv import load_dotenv
 from ..utils.embedding_utils import create_embedding, find_similar_embeddings
+from ..utils.utils import extract_asin_from_url
 
 load_dotenv()
 router = APIRouter()
@@ -66,22 +69,66 @@ async def update_job(job_id: str, job: Job):
                 "_id": product_id,
                 **product_data
             })
-        generated_review = await generate_product_review(product_data)
-        embedding = await create_embedding(generated_review)
-        product_collection.update_one({"_id": product_id}, {"$set": {"generated_review": generated_review,
-                                                                     "embedding": embedding}})
+            # Run generate_product_review and generate_embedding_text in parallel
+        generated_review, embedding_text = await asyncio.gather(
+            generate_product_review(product_data),
+            generate_embedding_text(product_data)
+        )
+
+        # Now that we have embedding_text, we can generate the embedding
+        embedding = await create_embedding(embedding_text)
+
+        product_collection.update_one({"_id": product_id}, {"$set": {
+            "generated_review": generated_review,
+            "embedding": embedding,
+            "embedding_text": embedding_text,
+            "updated_at": datetime.now()
+        }})
     except Exception as e:
         # Log the exception (logging mechanism to be configured as needed)
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 
+async def generate_embedding_text(product):
+    try:
+        # Read the prompt asynchronously
+        async with aiofiles.open('prompts/embedding_text_prompt.txt', mode='r') as file:
+            prompt = await file.read()
+
+        # Configure your OpenAI client properly here
+        client = OpenAI()
+        product.pop("embedding", None)
+        product.pop("reviews", None)
+
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user",
+                 "content": f"{product}"}
+            ]
+        )
+        message = completion.choices[0].message.model_dump()
+        return message["content"]
+
+    except Exception as e:
+        # Log the exception (logging mechanism to be configured as needed)
+        print(f"Error in generate_product_review: {e}")
+        raise
+
+
 async def generate_product_review(product):
     try:
         # Read the prompt asynchronously
-        async with aiofiles.open('prompts/review-prompt.txt', mode='r') as file:
+        # check the length of the product review array
+        promptFile = "prompts/reviews_prompt.txt"
+        if len(product["reviews"]) == 0:
+            promptFile = "prompts/no_reviews_prompt.txt"
+        async with aiofiles.open(promptFile, mode='r') as file:
             prompt = await file.read()
 
+        product.pop("embedding", None)
         # Configure your OpenAI client properly here
         client = OpenAI()
 
@@ -90,7 +137,7 @@ async def generate_product_review(product):
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user",
-                 "content": f"Generate a comprehensive report based on the following product data: {product}"}
+                 "content": f"{product}"}
             ]
         )
         message = completion.choices[0].message.model_dump()
@@ -104,6 +151,15 @@ async def generate_product_review(product):
 
 @router.post("/scrape/amazon")
 async def scrape_amazon(url: str):
+    # get the product id from the url
+    asin = extract_asin_from_url(url)
+    if not asin:
+        raise HTTPException(status_code=400, detail="Invalid Amazon product URL")
+    # check if the product already exists
+    existing_product = product_collection.find_one({"_id": asin}, {"embedding": 0, "reviews": 0})
+    if existing_product:
+        return existing_product
+
     job = Job(url=url)
     job = job.model_dump(by_alias=True)
     job.pop("_id", None)
@@ -120,26 +176,6 @@ async def scrape_amazon(url: str):
     return job_data
 
 
-@router.post("/generate-review")
-async def generate_review(product: dict):
-    client = OpenAI()
-    # read prompt from the prompts folder
-    prompt = ""
-    with open('prompts/review-prompt.txt', 'r') as file:
-        prompt = file.read()
-
-    completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user",
-             "content": "Generate a comprehensive report based on the following product data: " + str(product)}
-        ]
-    )
-
-    return completion.choices[0].message
-
-
 @router.post("/products")
 async def create_product(product: dict):
     product_id = product_collection.insert_one(product).inserted_id
@@ -148,25 +184,45 @@ async def create_product(product: dict):
     return product_data
 
 
+@router.get("/product_regenerate")
+async def regenerate_product(id: str):
+    product = product_collection.find_one({"_id": id})
+    if product:
+        # Run generate_product_review and generate_embedding_text in parallel
+        generated_review, embedding_text = await asyncio.gather(
+            generate_product_review(product),
+            generate_embedding_text(product)
+        )
+
+        # Now that we have embedding_text, we can generate the embedding
+        embedding = await create_embedding(embedding_text)
+
+        product_collection.update_one({"_id": id}, {"$set": {
+            "generated_review": generated_review,
+            "embedding": embedding,
+            "embedding_text": embedding_text,
+            "updated_at": datetime.now()
+        }})
+        return product_collection.find_one({"_id": id}, {"embedding": 0, "reviews": 0})
+    raise HTTPException(status_code=404, detail="Product not found")
+
+
 @router.get("/products")
 async def get_products(job_id: str = None):
     if job_id:
-        # Fetch products by job_id if the query parameter is provided
-        products_cursor = product_collection.find({"job_id": job_id})
-        products = list_products_serializer(products_cursor)
+        products_cursor = product_collection.find({"job_id": job_id}, {"embedding": 0, "reviews": 0})
     else:
         # Fetch all products if no job_id query parameter is provided
-        products_cursor = product_collection.find({})
-        products = list_products_serializer(products_cursor)
+        products_cursor = product_collection.find({}, {"embedding": 0, "reviews": 0})
 
-    return products if products else []
+    return list(products_cursor)
 
 
 @router.get("/products/{product_id}")
 async def get_product(product_id: str):
-    product = product_collection.find_one({"_id": ObjectId(product_id)})
+    product = product_collection.find_one({"_id": ObjectId(product_id)}, {"embedding": 0, "reviews": 0})
     if product:
-        return product_serializer(product)
+        return product
     raise HTTPException(status_code=404, detail="Product not found")
 
 
@@ -174,8 +230,15 @@ async def get_product(product_id: str):
 async def get_query(query: str):
     embedding = await create_embedding(query)
     excludes = [
-        "reviews",
         "embedding",
-        ]
+        "reviews"
+    ]
     documents = await find_similar_embeddings(product_collection, embedding, excludes)
-    return documents
+    # items = []
+    # for doc in documents:
+    #     item = {
+    #         "title": doc["title"],
+    #         "score": doc["score"]
+    #     }
+    #     items.append(item)
+    return list(documents)
