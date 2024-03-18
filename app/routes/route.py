@@ -150,7 +150,8 @@ async def generate_product_review(product):
 
 
 @router.post("/scrape/amazon")
-async def scrape_amazon(url: str):
+async def scrape_amazon(body: dict):
+    url = body.get("url")
     # get the product id from the url
     asin = extract_asin_from_url(url)
     if not asin:
@@ -220,14 +221,15 @@ async def get_products(job_id: str = None):
 
 @router.get("/products/{product_id}")
 async def get_product(product_id: str):
-    product = product_collection.find_one({"_id": ObjectId(product_id)}, {"embedding": 0, "reviews": 0})
+    product = product_collection.find_one({"_id": product_id}, {"embedding": 0, "reviews": 0})
     if product:
         return product
     raise HTTPException(status_code=404, detail="Product not found")
 
 
-@router.get("/query")
-async def get_query(query: str):
+@router.post("/embeddings/search")
+async def get_query(body: dict):
+    query = body.get("query")
     embedding = await create_embedding(query)
     excludes = [
         "embedding",
@@ -242,3 +244,31 @@ async def get_query(query: str):
     #     }
     #     items.append(item)
     return list(documents)
+
+
+@router.post("/products/{product_id}/chat")
+async def get_product_chat(product_id: str, body: dict):
+    query = body.get("query")
+    product = product_collection.find_one({"_id": product_id})
+    if product:
+        # Read the prompt asynchronously
+        async with aiofiles.open('prompts/product_chat_prompt.txt', mode='r') as file:
+            prompt = await file.read()
+
+        # Configure your OpenAI client properly here
+        client = OpenAI()
+        product.pop("embedding", None)
+        # product.pop("reviews", None)
+
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user",
+                 "content": f"{product}"},
+                {"role": "user", "content": query}
+            ]
+        )
+        message = completion.choices[0].message.model_dump()
+        return message["content"]
+    raise HTTPException(status_code=404, detail="Product not found")
