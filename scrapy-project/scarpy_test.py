@@ -97,6 +97,34 @@ class AmazonSpiderTest(unittest.TestCase):
         self.assertTrue(len(product_data['reviews']) > 0 and product_data['reviews'] is not None)
         self.assertTrue(product_data['rating'] > 0 and product_data['rating'] is not None)
 
+
+    @patch('scrapy.Spider.start_requests')
+    def test_spider_with_mocked_response3(self, mock_start_requests):
+        with open('./fixtures/test3.html', 'r') as file:
+            mock_response_content = file.read()
+
+        # Create a mocked response object
+        url = 'https://www.amazon.com/dp/B0CP129FCR?th=1'
+        request = Request(url=url)
+        response = TextResponse(url=url, request=request, body=mock_response_content, encoding='utf-8')
+
+        # Replace the start_requests method to yield our mocked response
+        mock_start_requests.return_value = [response]
+
+        # You can now test your spider's parsing logic
+        result_items = []
+        for item in self.spider.parse(response):
+            result_items.append(item.meta)
+        job = result_items[0]['job']
+        product_data = job['result']
+        self.assertTrue(product_data['image_url'] != '' and product_data['image_url'] is not None)
+        self.assertTrue(product_data['description'] != '' and product_data['description'] is not None)
+        self.assertTrue(product_data['title'] != '' and product_data['title'] is not None)
+        self.assertTrue(product_data['specs'] != '' and product_data['specs'] is not None)
+        self.assertTrue(product_data['price'] != '' and product_data['price'] is not None)
+        self.assertTrue(product_data['features'] != '' and product_data['features'] is not None)
+        self.assertTrue(len(product_data['reviews']) > 0 and product_data['reviews'] is not None)
+        self.assertTrue(product_data['rating'] > 0 and product_data['rating'] is not None)
     # @patch('scraper.spiders.amazon.AmazonSpider.parse_critical_reviews')
     def test_parse_critical_reviews(self):
         # Load your HTML fixture

@@ -15,115 +15,324 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def safe_extract(response_or_selector, query, query_type='css', extract_first=True, default_value=None):
+# def safe_extract(response_or_selector, query, query_type='css', extract_first=True, default_value=None):
+#     """
+#     Safely extract data from a given query on a response or selector.
+#     :param response_or_selector: Scrapy Response or Selector object.
+#     :param query: String representing the CSS or XPath query.
+#     :param query_type: 'css' for CSS queries, 'xpath' for XPath queries.
+#     :param extract_first: True to extract the first result, False to extract all results.
+#     :param default_value: Default value to return if no data is found. Can be of any type.
+#     :return: Extracted data or default value.
+#     """
+#     if query_type == 'css':
+#         data = response_or_selector.css(query)
+#     elif query_type == 'xpath':
+#         data = response_or_selector.xpath(query)
+#     else:
+#         raise ValueError("Invalid query_type. Use 'css' or 'xpath'.")
+#
+#     if extract_first:
+#         return data.get(default=default_value).strip() if data and data.get() is not None else default_value
+#     else:
+#         return [element.strip() for element in data.getall()] if data else default_value if isinstance(default_value,
+#                                                                                                        list) else [
+#             default_value]
+
+
+def safe_extract(response_or_selector, queries, query_type='css', extract_first=True, default_value=None):
     """
-    Safely extract data from a given query on a response or selector.
+    Safely extract data from a given set of queries on a response or selector.
+    Tries each query until successful extraction.
     :param response_or_selector: Scrapy Response or Selector object.
-    :param query: String representing the CSS or XPath query.
-    :param query_type: 'css' for CSS queries, 'xpath' for XPath queries.
-    :param extract_first: True to extract the first result, False to extract all results.
+    :param queries: List of strings representing the CSS or XPath queries.
+    :param query_type: 'css' for CSS queries, 'xpath' for XPath queries. Assumes all queries are of the same type.
+    :param extract_first: True to extract the first result, False to extract all results from the first successful query.
     :param default_value: Default value to return if no data is found. Can be of any type.
-    :return: Extracted data or default value.
+    :return: Extracted data from the first successful query or default value.
     """
-    if query_type == 'css':
-        data = response_or_selector.css(query)
-    elif query_type == 'xpath':
-        data = response_or_selector.xpath(query)
-    else:
-        raise ValueError("Invalid query_type. Use 'css' or 'xpath'.")
+    for query in queries:
+        if query_type == 'css':
+            data = response_or_selector.css(query)
+        elif query_type == 'xpath':
+            data = response_or_selector.xpath(query)
+        else:
+            raise ValueError("Invalid query_type. Use 'css' or 'xpath'.")
 
-    if extract_first:
-        return data.get(default=default_value).strip() if data and data.get() is not None else default_value
-    else:
-        return [element.strip() for element in data.getall()] if data else default_value if isinstance(default_value,
-                                                                                                       list) else [
-            default_value]
+        if data:
+            if extract_first:
+                extracted = data.get()
+                if extracted is not None:
+                    return extracted.strip()
+            else:
+                all_data = data.getall()
+                if all_data:
+                    return [element.strip() for element in all_data]
+
+    # Return default value if none of the queries return data
+    if not extract_first and isinstance(default_value, list):
+        return default_value
+    return [default_value] if not extract_first else default_value
 
 
+# def get_product_specs(response):
+#     product_specs = {}
+#     specs_table = response.xpath("//table[@id='productDetails_detailBullets_sections1']")
+#
+#     for spec in specs_table.xpath(".//tr"):
+#         spec_name = safe_extract(spec, ".//th/text()", query_type='xpath', extract_first=True,
+#                                  default_value='Unknown Spec')
+#         spec_value = safe_extract(spec, ".//td/text()", query_type='xpath', extract_first=True,
+#                                   default_value='Not Available')
+#
+#         if spec_name != 'Unknown Spec':
+#             product_specs[spec_name] = spec_value
+#
+#     return product_specs
+def extract_table_data(response, table_selector):
+    table = response.xpath(table_selector)
+    data = {}
+    key_selectors = [".//th/text()"]
+    value_selectors = [".//td/text()"]
+    for row in table.xpath(".//tr"):
+        key = safe_extract(row, key_selectors, query_type='xpath', extract_first=True, default_value='Unknown Spec')
+        value = safe_extract(row, value_selectors, query_type='xpath', extract_first=True, default_value='Not Available')
+        if key != 'Unknown Spec':
+            #replace all /n and strip out excess space from the font and end of the string
+            value = value.replace('\\n', '').strip()
+            data[key.strip()] = value
+    return data
 def get_product_specs(response):
     product_specs = {}
+    # Identify the specs table by its ID
     specs_table = response.xpath("//table[@id='productDetails_detailBullets_sections1']")
+    tech_specs_table1 = response.xpath("//table[@id='productDetails_techSpec_section_1']")
+    tech_spec_table2 = response.xpath("//table[@id='productDetails_techSpec_section_2']")
+    product_specs.update(extract_table_data(response, "//table[@id='productDetails_detailBullets_sections1']"))
+    product_specs.update(extract_table_data(response, "//table[@id='productDetails_techSpec_section_1']"))
+    product_specs.update(extract_table_data(response, "//table[@id='productDetails_techSpec_section_2']"))
 
-    for spec in specs_table.xpath(".//tr"):
-        spec_name = safe_extract(spec, ".//th/text()", query_type='xpath', extract_first=True,
-                                 default_value='Unknown Spec')
-        spec_value = safe_extract(spec, ".//td/text()", query_type='xpath', extract_first=True,
-                                  default_value='Not Available')
+    # for spec in specs_table.xpath(".//tr"):
+    #     # Use a list of possible selectors for both spec_name and spec_value
+    #     spec_name_selectors = [".//th/text()"]
+    #     spec_value_selectors = [".//td/text()"]
+    #
+    #     # Call safe_extract with the updated function that accepts a list of selectors
+    #     spec_name = safe_extract(spec, spec_name_selectors, query_type='xpath', extract_first=True,
+    #                              default_value='Unknown Spec')
+    #     spec_value = safe_extract(spec, spec_value_selectors, query_type='xpath', extract_first=True,
+    #                               default_value='Not Available')
+    #
+    #     # Add the extracted spec name and value to the product_specs dictionary if the spec name is known
+    #     if spec_name != 'Unknown Spec':
+    #         product_specs[spec_name.strip()] = spec_value.strip()
+    # for spec in tech_specs_table1.xpath(".//tr"):
+    #     # Use a list of possible selectors for both spec_name and spec_value
+    #     spec_name_selectors = [".//th/text()"]
+    #     spec_value_selectors = [".//td/text()"]
+    #
+    #     # Call safe_extract with the updated function that accepts a list of selectors
+    #     spec_name = safe_extract(spec, spec_name_selectors, query_type='xpath', extract_first=True,
+    #                              default_value='Unknown Spec')
+    #     spec_value = safe_extract(spec, spec_value_selectors, query_type='xpath', extract_first=True,
+    #                               default_value='Not Available')
+    #
+    #     # Add the extracted spec name and value to the product_specs dictionary if the spec name is known
+    #     if spec_name != 'Unknown Spec':
+    #         product_specs[spec_name.strip()] = spec_value.strip()
 
-        if spec_name != 'Unknown Spec':
-            product_specs[spec_name] = spec_value
 
     return product_specs
 
 
 def get_rating(response):
-    rating_selector = 'a.a-popover-trigger.a-declarative span.a-size-base.a-color-base::text'
-    rating = safe_extract(response, rating_selector, query_type='css', extract_first=True, default_value=0.0)
+    # Define a list of selectors to try for extracting the rating
+    rating_selectors = [
+        'a.a-popover-trigger.a-declarative span.a-size-base.a-color-base::text',  # Original selector
+        # Add any alternative selectors here as needed
+    ]
+
+    # Use the updated safe_extract function with a list of selectors
+    rating = safe_extract(response, rating_selectors, query_type='css', extract_first=True, default_value='0.0')
+
     try:
+        # Attempt to convert the extracted rating to a float
         return float(rating)
     except ValueError:
+        # Log an error message if the conversion fails
         logging.error(f"Failed to convert rating '{rating}' to float.")
         return 0.0
 
 
+# def get_rating(response):
+#     rating_selector = 'a.a-popover-trigger.a-declarative span.a-size-base.a-color-base::text'
+#     rating = safe_extract(response, rating_selector, query_type='css', extract_first=True, default_value=0.0)
+#     try:
+#         return float(rating)
+#     except ValueError:
+#         logging.error(f"Failed to convert rating '{rating}' to float.")
+#         return 0.0
+
+
+# def get_image_url(response):
+#     image_url_selector = "//div[@id='imgTagWrapperId']/img/@src"
+#     return safe_extract(response, image_url_selector, query_type='xpath', extract_first=True, default_value='')
+
+
 def get_image_url(response):
-    image_url_selector = "//div[@id='imgTagWrapperId']/img/@src"
-    return safe_extract(response, image_url_selector, query_type='xpath', extract_first=True, default_value='')
+    # Define a list of XPath selectors to try for extracting the image URL
+    image_url_selectors = [
+        "//div[@id='imgTagWrapperId']/img/@src",  # Original selector
+        # You can add alternative selectors here as needed
+    ]
+
+    # Use the updated safe_extract function with a list of selectors
+    return safe_extract(response, image_url_selectors, query_type='xpath', extract_first=True, default_value='')
 
 
 def get_product_description(response):
-    description_selector = "//div[@id='productDescription']/p/span/text()"
-    return safe_extract(response, description_selector, query_type='xpath', extract_first=True, default_value='')
+    # Define a list of XPath selectors to try for extracting the product description
+    description_selectors = [
+        "//div[@id='productDescription']/p/span/text()",  # Original selector
+        # You can add more selectors here as fallbacks or alternatives
+    ]
 
+    # Use the updated safe_extract function with a list of selectors
+    return safe_extract(response, description_selectors, query_type='xpath', extract_first=True, default_value='')
+
+
+# def get_product_description(response):
+#     description_selector = "//div[@id='productDescription']/p/span/text()"
+#     return safe_extract(response, description_selector, query_type='xpath', extract_first=True, default_value='')
+
+
+# def get_product_title(response):
+#     title_selector = 'span#productTitle::text'
+#     return safe_extract(response, title_selector, query_type='css', extract_first=True, default_value='')
 
 def get_product_title(response):
-    title_selector = 'span#productTitle::text'
-    return safe_extract(response, title_selector, query_type='css', extract_first=True, default_value='')
+    # Define a list of CSS selectors to try for extracting the product title
+    title_selectors = [
+        'span#productTitle::text',  # Original selector
+        # Additional selectors can be added here as necessary
+    ]
 
+    # Use the updated safe_extract function with a list of selectors
+    return safe_extract(response, title_selectors, query_type='css', extract_first=True, default_value='')
+
+
+# def get_price(response):
+#     price_selector = 'span.a-price span[aria-hidden="true"]::text'
+#     price_str = safe_extract(response, price_selector, query_type='css', extract_first=True, default_value='0')
+#     try:
+#         return float(price_str.replace('$', '').replace(',', '').strip())
+#     except ValueError:
+#         logging.error(f"Failed to convert price '{price_str}' to float.")
+#         return 0.0
 
 def get_price(response):
-    price_selector = 'span.a-price span[aria-hidden="true"]::text'
-    price_str = safe_extract(response, price_selector, query_type='css', extract_first=True, default_value='0')
+    # Define a list of CSS selectors to try for extracting the price
+    price_selectors = [
+        'span.a-price span[aria-hidden="true"]::text',  # Original selector
+        'span.aok-offscreen::text',  # Alternative selector
+    ]
+
+    # Use the updated safe_extract function with a list of selectors
+    price_str = safe_extract(response, price_selectors, query_type='css', extract_first=True, default_value='0')
+
     try:
+        # Attempt to convert the extracted price string to a float after cleaning
         return float(price_str.replace('$', '').replace(',', '').strip())
     except ValueError:
+        # Log an error message if the conversion fails
         logging.error(f"Failed to convert price '{price_str}' to float.")
         return 0.0
 
 
 def get_features(response):
-    features_selector = "//div[@id='feature-bullets']//li/span[@class='a-list-item']/text()"
-    features = safe_extract(response, features_selector, query_type='xpath', extract_first=False, default_value=[])
-    return [feature for feature in features if feature.strip()]
+    # Define a list of XPath selectors to try for extracting the features list
+    features_selectors = [
+        "//div[@id='feature-bullets']//li/span[@class='a-list-item']/text()",  # Original selector
+        # Additional selectors can be added here as fallbacks or alternatives
+    ]
 
+    # Use the updated safe_extract function with a list of selectors
+    features = safe_extract(response, features_selectors, query_type='xpath', extract_first=False, default_value=[])
+
+    # Filter out any empty or whitespace-only strings from the extracted features list
+    return [feature.strip() for feature in features if feature.strip()]
+
+
+# def get_features(response):
+#     features_selector = "//div[@id='feature-bullets']//li/span[@class='a-list-item']/text()"
+#     features = safe_extract(response, features_selector, query_type='xpath', extract_first=False, default_value=[])
+#     return [feature for feature in features if feature.strip()]
+
+
+# def get_reviews(response, product_reviews):
+#     reviews_selector = 'div[data-hook="review"]'
+#     reviews = response.css(reviews_selector)
+#     for review in reviews:
+#         review_data = {
+#             'rating': safe_extract(review, 'i[data-hook="review-star-rating"] > span::text', query_type='css',
+#                                    default_value='0'),
+#             'date': safe_extract(review, 'span[data-hook="review-date"]::text', query_type='css',
+#                                  default_value='No Date'),
+#             'text': safe_extract(review, 'string(.//span[@data-hook="review-body"]//span)', query_type='xpath',
+#                                  default_value='No Review Text'),
+#             'author': safe_extract(review, 'span.a-profile-name::text', query_type='css', default_value='Anonymous'),
+#         }
+#         if review_data['text'] == 'No Review Text':
+#             review_data['text'] = safe_extract(review, 'div[data-hook="review-collapsed"] > span::text',
+#                                                query_type='css',
+#                                                default_value='No Review Text'),
+#         # Convert rating to float and handle conversion failure
+#         try:
+#             review_data['rating'] = float(review_data['rating'].split(' out of')[0].strip())
+#         except ValueError:
+#             review_data['rating'] = 0.0
+#         # check if the author already exists in the list of reviews
+#         if review_data['author'] not in [review['author'] for review in product_reviews]:
+#             product_reviews.append(review_data)
+#         else:
+#             continue
+#     return product_reviews
 
 def get_reviews(response, product_reviews):
     reviews_selector = 'div[data-hook="review"]'
     reviews = response.css(reviews_selector)
+
+    # Define variables for each selector
+    rating_selectors = ['i[data-hook="review-star-rating"] > span::text']
+    date_selectors = ['span[data-hook="review-date"]::text']
+    text_selectors = ['string(.//span[@data-hook="review-body"]//span)']
+    author_selectors = ['span.a-profile-name::text']
+    collapsed_text_selectors = ['div[data-hook="review-collapsed"] > span::text']
+
     for review in reviews:
         review_data = {
-            'rating': safe_extract(review, 'i[data-hook="review-star-rating"] > span::text', query_type='css',
-                                   default_value='0'),
-            'date': safe_extract(review, 'span[data-hook="review-date"]::text', query_type='css',
-                                 default_value='No Date'),
-            'text': safe_extract(review, 'string(.//span[@data-hook="review-body"]//span)', query_type='xpath',
-                                 default_value='No Review Text'),
-            'author': safe_extract(review, 'span.a-profile-name::text', query_type='css', default_value='Anonymous'),
+            'rating': safe_extract(review, rating_selectors, query_type='css', default_value='0'),
+            'date': safe_extract(review, date_selectors, query_type='css', default_value='No Date'),
+            'text': safe_extract(review, text_selectors, query_type='xpath', default_value='No Review Text'),
+            'author': safe_extract(review, author_selectors, query_type='css', default_value='Anonymous'),
         }
+
+        # Attempt to extract review text using an alternative selector if the first attempt returned 'No Review Text'
         if review_data['text'] == 'No Review Text':
-            review_data['text'] = safe_extract(review, 'div[data-hook="review-collapsed"] > span::text',
-                                               query_type='css',
+            review_data['text'] = safe_extract(review, collapsed_text_selectors, query_type='css',
                                                default_value='No Review Text'),
+
         # Convert rating to float and handle conversion failure
         try:
             review_data['rating'] = float(review_data['rating'].split(' out of')[0].strip())
         except ValueError:
+            logging.error(f"Failed to convert rating '{review_data['rating']}' to float.")
             review_data['rating'] = 0.0
-        # check if the author already exists in the list of reviews
-        if review_data['author'] not in [review['author'] for review in product_reviews]:
+
+        # Check if the author already exists in the list of reviews to avoid duplicates
+        if not any(existing_review['author'] == review_data['author'] for existing_review in product_reviews):
             product_reviews.append(review_data)
-        else:
-            continue
+
     return product_reviews
 
 
@@ -138,32 +347,165 @@ def extract_asin_from_url(url):
     return match.group(1) if match else None
 
 
+# def get_similar_products(product_asin, response):
+#     first_row = response.css('._product-comparison-desktop_desktopFaceoutStyle_asin__2eMLv')
+#     second_row = response.css('._product-comparison-desktop_desktopFaceoutStyle_tableAttribute__2V-c2 > span.a-price')
+#     products = []
+#     for prod in first_row:
+#         asin = prod.css('div.a-image-container::attr(id)').re_first(r'B0[A-Z0-9]+')
+#         product = {
+#             'title': safe_extract(prod, 'img::attr(alt)', query_type='css', extract_first=True, default_value=''),
+#             'image': safe_extract(prod, 'img::attr(src)', query_type='css', extract_first=True, default_value=''),
+#             'asin': asin,
+#             'url': f'https://www.amazon.com/dp/{asin}'
+#         }
+#         products.append(product)
+#     prices = []
+#     for i, prod in enumerate(second_row):
+#         prices.append(
+#             safe_extract(prod, 'span.a-offscreen::text', query_type='css', extract_first=True, default_value=''))
+#     if len(prices) != len(products):
+#         while len(prices) != len(products):
+#             products.pop(0)
+#     for i, prod in enumerate(products):
+#         prod['price'] = prices[i]
+#     for prod in products:
+#         if prod['asin'] == product_asin:
+#             products.remove(prod)
+#             break
+#     return products
+
+
+def get_number_of_reviews(response):
+    # First, define the selector for the parent div to narrow down the search scope
+    parent_div_selector = 'div#averageCustomerReviews'
+
+    # Define the selector for the span that contains the number of reviews
+    number_of_reviews_selectors = ['span#acrCustomerReviewText::text']
+
+    # Use the parent div selector to narrow down the search, and then apply safe_extract with the reviews selector
+    parent_div = response.css(parent_div_selector)
+    number_of_reviews = safe_extract(parent_div, number_of_reviews_selectors, query_type='css', extract_first=True, default_value='').strip()
+
+    return number_of_reviews
+
+
+
+def get_product_variants(response):
+    variants = {}
+
+    # First, select the form that contains variant information
+    form_selector = "form#twister"  # Adjust this selector to target the specific form if needed
+    form = response.css(form_selector)
+
+    # Then, within this form, look for variant sections such as "Capacity" or "Color"
+    variant_sections = form.xpath(".//div[contains(@class, 'a-section') and contains(@class, 'a-spacing-small')]")
+
+    for section in variant_sections:
+        # Use safe_extract to get the variant title from each section
+        title_selectors = [".//label[@class='a-form-label']/text()"]
+        title = safe_extract(section, title_selectors, query_type='xpath', extract_first=True, default_value='').strip()
+
+        if not title:  # Skip sections without a clear title
+            continue
+        if "\\n" in title:
+            title = title.replace("\\n", "").strip()
+
+        variant_options = []
+
+        # Iterate over each option within the current variant section
+        option_selectors = [".//li[contains(@class, 'swatchAvailable') or contains(@class, 'swatchSelect')]"]
+        for option in section.xpath(option_selectors[0]):
+            option_info = {}
+
+            # Use safe_extract to get the option name
+            option_name_selectors = ["@title", ".//span/text()"]
+            option_name = safe_extract(option, option_name_selectors, query_type='xpath', extract_first=True, default_value='').strip()
+            if "Click to select" in option_name:
+                option_name = option_name.replace("Click to select", "").strip()
+            option_info['name'] = option_name
+
+            # Use safe_extract to check for and get a color image, if present
+            color_image_selectors = [".//img/@src"]
+            color_image = safe_extract(option, color_image_selectors, query_type='xpath', extract_first=True, default_value=None)
+            if color_image:
+                option_info['color'] = option_name  # Assuming the title or text content represents the color name
+                option_info['image'] = color_image
+
+            variant_options.append(option_info)
+
+        # Assign the list of options to the corresponding title in the variants dictionary
+        variants[title] = variant_options
+
+    return variants
+
+# def get_product_variants(response):
+#     variants = []
+#
+#     # Selectors for variants. We're looking for available or selected swatches, which may include colors, sizes, etc.
+#     variant_selectors = [
+#         "//ul[contains(@class,'a-button-toggle-group')]//li[contains(@class,'swatchAvailable') or contains(@class,'swatchSelect')]"
+#     ]
+#
+#     # Iterate over each variant using the selector
+#     for variant in response.xpath(variant_selectors[0]):
+#         # Initial dictionary to hold variant information
+#         variant_info = {}
+#
+#         # Extracting the variant name from the title attribute or the text content
+#         variant_name = variant.xpath("@title").get() or variant.xpath(".//span/text()").get(default='').strip()
+#         if "Click to select" in variant_name:
+#             variant_name = variant_name.replace("Click to select", "").strip()
+#         variant_info['name'] = variant_name
+#
+#         # Check if the variant is a color by looking for an image within the swatch
+#         color_image = variant.xpath(".//img/@src").get()
+#         if color_image:
+#             variant_info['color'] = variant_name  # Assuming the title or text content represents the color name
+#             variant_info['image'] = color_image
+#
+#         variants.append(variant_info)
+#
+#     return variants
+
 def get_similar_products(product_asin, response):
-    first_row = response.css('._product-comparison-desktop_desktopFaceoutStyle_asin__2eMLv')
-    second_row = response.css('._product-comparison-desktop_desktopFaceoutStyle_tableAttribute__2V-c2 > span.a-price')
+    first_row_selector = '._product-comparison-desktop_desktopFaceoutStyle_asin__2eMLv'
+    second_row_selector = '._product-comparison-desktop_desktopFaceoutStyle_tableAttribute__2V-c2 > span.a-price'
+
+    first_row = response.css(first_row_selector)
+    second_row = response.css(second_row_selector)
+
+    title_selectors = ['img::attr(alt)']
+    image_selectors = ['img::attr(src)']
+    price_selectors = ['span.a-offscreen::text']
+
     products = []
     for prod in first_row:
         asin = prod.css('div.a-image-container::attr(id)').re_first(r'B0[A-Z0-9]+')
         product = {
-            'title': safe_extract(prod, 'img::attr(alt)', query_type='css', extract_first=True, default_value=''),
-            'image': safe_extract(prod, 'img::attr(src)', query_type='css', extract_first=True, default_value=''),
+            'title': safe_extract(prod, title_selectors, query_type='css', extract_first=True, default_value=''),
+            'image': safe_extract(prod, image_selectors, query_type='css', extract_first=True, default_value=''),
             'asin': asin,
             'url': f'https://www.amazon.com/dp/{asin}'
         }
         products.append(product)
+
     prices = []
-    for i, prod in enumerate(second_row):
-        prices.append(
-            safe_extract(prod, 'span.a-offscreen::text', query_type='css', extract_first=True, default_value=''))
+    for prod in second_row:
+        prices.append(safe_extract(prod, price_selectors, query_type='css', extract_first=True, default_value=''))
+
+    # Ensure the lengths of products and prices match by removing excess products
     if len(prices) != len(products):
         while len(prices) != len(products):
             products.pop(0)
+
+    # Assign prices to products
     for i, prod in enumerate(products):
         prod['price'] = prices[i]
-    for prod in products:
-        if prod['asin'] == product_asin:
-            products.remove(prod)
-            break
+
+    # Remove the product that matches the input ASIN
+    products = [prod for prod in products if prod['asin'] != product_asin]
+
     return products
 
 
@@ -264,8 +606,10 @@ class AmazonSpider(scrapy.Spider):
             "specs": get_product_specs(response),
             "features": get_features(response),
             "rating": get_rating(response),
+            "number_of_reviews": get_number_of_reviews(response),
             "created_at": datetime.datetime.utcnow().isoformat(),
             "updated_at": datetime.datetime.utcnow().isoformat(),
+            "variants": get_product_variants(response),
             "generated_review": '',
         }
         similar_products = get_similar_products(self.product["id"], response)
