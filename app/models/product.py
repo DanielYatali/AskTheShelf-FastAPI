@@ -18,6 +18,9 @@ class Product(BaseModel):
     created_at: str
     updated_at: str
     similar_products: Optional[list] = []
+    variants: Optional[dict] = {}
+    number_of_reviews: Optional[str] = ""
+    qa: Optional[list] = []
     generated_review: Optional[str] = ""
 
 
