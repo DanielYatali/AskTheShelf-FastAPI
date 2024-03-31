@@ -1,9 +1,10 @@
 import asyncio
-import os
 import subprocess
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
 from openai import OpenAI
+
 from ..models.job import Job
 from ..schemas.schemas import list_jobs_serializer, job_serializer, product_serializer, list_products_serializer
 from ..config.database import job_collection
@@ -12,11 +13,9 @@ from ..config.database import test_collection
 
 from bson import ObjectId
 import aiofiles
-from dotenv import load_dotenv
 from ..utils.embedding_utils import create_embedding, find_similar_embeddings
 from ..utils.utils import extract_asin_from_url
 
-load_dotenv()
 router = APIRouter()
 
 
