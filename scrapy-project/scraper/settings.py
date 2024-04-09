@@ -13,6 +13,11 @@ BOT_NAME = "scrapy"
 
 SPIDER_MODULES = ["scraper.spiders"]
 NEWSPIDER_MODULE = "spiders"
+MONGO_URI = 'mongodb+srv://Scraper:TzQkvr6fydIK233S@scraper.3d1axyn.mongodb.net/?retryWrites=true&w=majority&appName=scraper'  # MongoDB connection URI
+MONGO_DATABASE = 'scraper'  # MongoDB database name
+ITEM_PIPELINES = {
+    'scraper.pipelines.MongoPipeline': 300,
+}
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 # USER_AGENT = "projectname (+http://www.yourdomain.com)"

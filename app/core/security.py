@@ -1,44 +1,85 @@
-import base64
-from datetime import datetime, timedelta
-from typing import Union, Any
+from typing import Union, Any, Optional
+from fastapi import HTTPException, status, Depends
+from fastapi.security import SecurityScopes, HTTPAuthorizationCredentials, HTTPBearer
 from app.core.config import settings
-from jose import jwt
-
-import bcrypt
-
-from app.models.user_model import User
+import jwt
 
 
-def hash_password(password):
-    password_bytes = password.encode('utf-8')
-    hashed_password = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
-    hashed_password_base64 = base64.b64encode(hashed_password).decode('utf-8')
-    return hashed_password_base64
+class UnauthorizedException(HTTPException):
+    def __init__(self, detail: str, **kwargs):
+        """Returns HTTP 403"""
+        super().__init__(status.HTTP_403_FORBIDDEN, detail=detail)
 
 
-def check_password(stored_hash_base64, password_to_check):
-    stored_hash_bytes = base64.b64decode(stored_hash_base64)
-    password_bytes = password_to_check.encode('utf-8')
-    return bcrypt.checkpw(password_bytes, stored_hash_bytes)
+class UnauthenticatedException(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Requires authentication"
+        )
 
 
-def create_access_token(user: User, expires_delta: int = None):
-    if expires_delta is not None:
-        expires_delta = datetime.utcnow() + timedelta(minutes=expires_delta)
-    else:
-        expires_delta = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"exp": expires_delta, "sub": str(user.user_id), "roles": user.roles, "username": user.username,
-                 "email": user.email}
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+# 👇 new code
+class VerifyToken:
+    """Does all the token verification using PyJWT"""
+
+    def __init__(self):
+        self.config = settings
+
+        # This gets the JWKS from a given URL and does processing so you can
+        # use any of the keys available
+        jwks_url = f'https://{self.config.AUTH0_DOMAIN}/.well-known/jwks.json'
+        self.jwks_client = jwt.PyJWKClient(jwks_url)
+
+    async def verify_token(self, token: str) -> Union[dict, Any]:
+        try:
+            signing_key = self.jwks_client.get_signing_key_from_jwt(token).key
+        except jwt.exceptions.PyJWKClientError as error:
+            raise UnauthorizedException(str(error))
+        except jwt.exceptions.DecodeError as error:
+            raise UnauthorizedException(str(error))
+
+        try:
+            payload = jwt.decode(
+                token,
+                signing_key,
+                algorithms=self.config.AUTH0_ALGORITHMS,
+                audience=self.config.AUTH0_AUDIENCE,
+                issuer=self.config.AUTH0_ISSUER,
+            )
+        except Exception as error:
+            raise UnauthorizedException(str(error))
+
+        return payload
+
+    async def verify(self,
+                     security_scopes: SecurityScopes,
+                     token: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer())
+                     ):
+        if token is None:
+            raise UnauthenticatedException
+
+        # This gets the 'kid' from the passed token
+        try:
+            signing_key = self.jwks_client.get_signing_key_from_jwt(
+                token.credentials
+            ).key
+        except jwt.exceptions.PyJWKClientError as error:
+            raise UnauthorizedException(str(error))
+        except jwt.exceptions.DecodeError as error:
+            raise UnauthorizedException(str(error))
+
+        try:
+            payload = jwt.decode(
+                token.credentials,
+                signing_key,
+                algorithms=self.config.AUTH0_ALGORITHMS,
+                audience=self.config.AUTH0_AUDIENCE,
+                issuer=self.config.AUTH0_ISSUER,
+            )
+        except Exception as error:
+            raise UnauthorizedException(str(error))
+
+        return payload
 
 
-def create_refresh_token(user: User, expires_delta: int = None):
-    if expires_delta is not None:
-        expires_delta = datetime.utcnow() + timedelta(minutes=expires_delta)
-    else:
-        expires_delta = datetime.utcnow() + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"exp": expires_delta, "sub": str(user.user_id), "roles": user.roles, "username": user.username,
-                 "email": user.email}
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_REFRESH_SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+auth = VerifyToken()

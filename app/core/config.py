@@ -1,7 +1,13 @@
+from beanie import init_beanie
+from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseSettings
 from decouple import config
 from typing import List
 from pydantic import AnyHttpUrl
+from app.core.logger import logger
+from app.models.job_model import Job
+from app.models.product_model import Product
+from app.models.user_model import User
 
 
 class Settings(BaseSettings):
@@ -27,3 +33,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+db_client = None
+
+
+async def init_db():
+    global db_client
+    # Initiate connection to MongoDB
+    logger.info("Connecting to MongoDB")
+    db_client = AsyncIOMotorClient(settings.MONGODB_CONNECTION_STRING).scraper
+    # Assuming init_beanie is a function that needs to be called at app startup
+    await init_beanie(
+        database=db_client,
+        document_models=[
+            User,  # Ensure User is imported
+            Job,  # Ensure Job is imported
+            Product  # Ensure Product is imported
+        ],
+    )
+    logger.info("Connected to MongoDB")

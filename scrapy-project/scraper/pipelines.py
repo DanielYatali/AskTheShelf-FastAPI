@@ -2,12 +2,58 @@
 #
 # Don't forget to add your pipeline to the ITEM_PIPELINES setting
 # See: https://docs.scrapy.org/en/latest/topics/item-pipeline.html
+import asyncio
+import json
+from datetime import datetime
 
-
+import aiohttp
 # useful for handling different item types with a single interface
 from itemadapter import ItemAdapter
 
+import pymongo
 
-class ProjectnamePipeline:
+
+def datetime_serializer(obj):
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
+class MongoPipeline(object):
+    def __init__(self, mongo_uri, mongo_db):
+        self.mongo_uri = mongo_uri
+        self.mongo_db = mongo_db
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(
+            mongo_uri=crawler.settings.get('MONGO_URI'),
+            mongo_db=crawler.settings.get('MONGO_DATABASE')
+        )
+
+    def open_spider(self, spider):
+        self.client = pymongo.MongoClient(self.mongo_uri)
+        self.db = self.client[self.mongo_db]
+
+    def close_spider(self, spider):
+        self.client.close()
+
+    #     def process_item(self, item, spider):
+    #         # post the data to service using a request
+    # #make async request to service
+
+    async def post_item(self, item):
+        # Asynchronous POST request using aiohttp
+        data = json.dumps(item, default=datetime_serializer)
+        async with aiohttp.ClientSession() as session:
+            async with session.post("http://localhost:8000/api/v1/scrapy/update",  data=data, headers={"Content-Type": "application/json"}) as response:
+                if response.status != 200:
+                    # You can adjust logging according to your needs
+                    response_text = await response.text()
+                    print(f"Failed to post item to endpoint: {response_text}")
+
     def process_item(self, item, spider):
+        # Convert the item to a dict and schedule the post_item coroutine
+        asyncio.create_task(self.post_item(dict(item)))
         return item

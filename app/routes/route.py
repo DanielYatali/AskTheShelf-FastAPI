@@ -2,7 +2,8 @@ import asyncio
 import subprocess
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer
 from openai import OpenAI
 
 from ..models.job import Job
@@ -15,8 +16,15 @@ from bson import ObjectId
 import aiofiles
 from ..utils.embedding_utils import create_embedding, find_similar_embeddings
 from ..utils.utils import extract_asin_from_url
+from app.models.job_model import Job
 
-router = APIRouter()
+job_router = APIRouter(dependencies=[Depends(HTTPBearer())])
+
+
+
+@job_router.get("/jobs")
+async def get_jobs():
+    return jobs
 
 
 # Get all jobs

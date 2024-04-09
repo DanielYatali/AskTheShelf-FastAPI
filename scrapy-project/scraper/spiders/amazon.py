@@ -1,16 +1,23 @@
+import asyncio
 import datetime
 import logging
 import os
 import re
 from random import randint
-from app.models.job import Job
-from app.models.product import Product
+from app.schemas.job_schema import JobSchema as Job, JobUpdate
+from app.schemas.product_schema import ProductSchema as Product
 from app.schemas.schemas import job_serializer, product_serializer
 import json
 import scrapy
 
 # import the env variables
 from dotenv import load_dotenv
+
+from app.services.job_service import JobService
+from app.services.llm_service import LLMService
+from app.services.product_service import ProductService
+from app.models.job_model import Job as JobModel
+from app.models.product_model import Product as ProductModel
 
 load_dotenv()
 
@@ -325,6 +332,7 @@ class AmazonSpider(scrapy.Spider):
 
     def __init__(self, url=None, job_id=None, *args, **kwargs):
         super(AmazonSpider, self).__init__(*args, **kwargs)
+        self.job = {}
         if not url or not job_id:
             raise ValueError("URL and Job ID are required")
         self.start_urls = [url]  # This should be the URL you intend to scrape
@@ -361,7 +369,7 @@ class AmazonSpider(scrapy.Spider):
             yield scrapy.Request(positive_reviews_url, callback=self.parse_positive_reviews,
                                  meta={'proxy': self.proxy})
 
-    def generate_job(self):
+    def generate_job(self) -> dict or None:
         if self.requests_completed != self.requests_needed:
             return
         reviews = self.critical_reviews
@@ -373,7 +381,7 @@ class AmazonSpider(scrapy.Spider):
                 reviews.append(review)
         qa = self.qa
         product = Product(
-            id=self.product['id'],
+            product_id=self.product['product_id'],
             job_id=self.job_id,
             domain=self.product['domain'],
             title=self.product['title'],
@@ -395,16 +403,18 @@ class AmazonSpider(scrapy.Spider):
 
         # merge all the reviews check the author to avoid duplicates
 
+        product_dict = product.dict()
         job = Job(
-            id=self.job_id,
+            job_id=self.job_id,
             status="completed",
             end_time=datetime.datetime.utcnow().isoformat(),
             start_time=datetime.datetime.utcnow().isoformat(),
-            result=product.model_dump(),
+            result=product_dict,
             url=self.start_urls[0],
             error={}
         )
-        return job.model_dump(mode="json")
+        job_dict = job.dict()
+        return job_dict
 
     def close_job(self, response):
         # Logic to handle the response and close the job
@@ -412,7 +422,7 @@ class AmazonSpider(scrapy.Spider):
 
     def parse(self, response):
         self.product = {
-            "id": extract_asin_from_url(response.url),
+            "product_id": extract_asin_from_url(response.url),
             "job_id": self.job_id,
             "domain": response.url.split('/')[2],
             "title": get_product_title(response),
@@ -428,19 +438,13 @@ class AmazonSpider(scrapy.Spider):
             "variants": get_product_variants(response),
             "generated_review": '',
         }
-        similar_products = get_similar_products(self.product["id"], response)
+        similar_products = get_similar_products(self.product["product_id"], response)
         self.product['similar_products'] = similar_products
         self.default_reviews = get_reviews(response, [])
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield scrapy.Request(
-                url=f"http://localhost:8000/jobs/{self.job_id}",
-                method='PUT',
-                body=json.dumps(job),
-                headers={'Content-Type': 'application/json'},
-                callback=self.close_job
-            )
+            yield job
 
     def parse_critical_reviews(self, response):
         critical_reviews = get_reviews(response, [])
@@ -448,13 +452,7 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield scrapy.Request(
-                url=f"http://localhost:8000/jobs/{self.job_id}",
-                method='PUT',
-                body=json.dumps(job),
-                headers={'Content-Type': 'application/json'},
-                callback=self.close_job
-            )
+            yield job
 
     def parse_positive_reviews(self, response):
         positive_reviews = get_reviews(response, [])
@@ -462,13 +460,7 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield scrapy.Request(
-                url=f"http://localhost:8000/jobs/{self.job_id}",
-                method='PUT',
-                body=json.dumps(job),
-                headers={'Content-Type': 'application/json'},
-                callback=self.close_job
-            )
+            yield job
 
     def extract_questions_and_answers(self, response):
         qa_pairs = []
@@ -479,7 +471,8 @@ class AmazonSpider(scrapy.Spider):
         for question_element in question_elements:
             # Using safe_extract to get the question text
             question_selectors = ['div > div > a > span::text']
-            question_text = safe_extract(question_element, question_selectors, query_type='css', extract_first=True, default_value='')
+            question_text = safe_extract(question_element, question_selectors, query_type='css', extract_first=True,
+                                         default_value='')
             if question_text:
                 question_text = question_text.replace('\\n', '').strip()
 
@@ -488,7 +481,8 @@ class AmazonSpider(scrapy.Spider):
 
             # Using safe_extract to get potential answer texts, then choosing the second one if available
             answer_selectors = ["div > span::text"]
-            answer_texts = safe_extract(sibling_div, answer_selectors, query_type='css', extract_first=False, default_value=[])
+            answer_texts = safe_extract(sibling_div, answer_selectors, query_type='css', extract_first=False,
+                                        default_value=[])
 
             answer_text = answer_texts[1] if len(answer_texts) > 1 else ''
             if answer_text:
@@ -503,10 +497,4 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield scrapy.Request(
-                url=f"http://localhost:8000/jobs/{self.job_id}",
-                method='PUT',
-                body=json.dumps(job),
-                headers={'Content-Type': 'application/json'},
-                callback=self.close_job
-            )
+            yield job
