@@ -18,6 +18,7 @@ from app.utils.utils import extract_asin_from_url
 
 job_router = APIRouter(dependencies=[Depends(HTTPBearer())])
 
+
 @job_router.get("/", summary="Get all jobs", response_model=List[JobOut] or HTTPException)
 async def get_jobs(request: Request) -> List[JobOut]:
     return await JobService.get_jobs()
@@ -37,7 +38,7 @@ async def get_job(request: Request, job_id: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@job_router.post("/", summary="Create job", response_model=JobOut or HTTPException or ProductOut)
+@job_router.post("/", summary="Create job")
 async def create_job(request: Request, job: JobRequest):
     try:
         if "amazon" not in job.url:
@@ -46,14 +47,14 @@ async def create_job(request: Request, job: JobRequest):
 
         if not asin:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a valid amazon url")
-
+        clean_url = f"https://www.amazon.com/dp/{asin}"
         product = await ProductService.get_product_by_id(asin)
         if product is not None:
-            return product
+            return ProductOut(**product.dict())
         new_job = Job(
             job_id=str(uuid.uuid4()),
-            user_id="sad",
-            url=job.url,
+            user_id=request.state.user.user_id,
+            url=clean_url,
             product_id=asin,
         )
         created_job = await JobService.create_job(new_job)
@@ -68,7 +69,7 @@ async def create_job(request: Request, job: JobRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to create job")
 
 
-@job_router.put("/scrapy/update", summary="Update job")
+@job_router.put("/jobs", summary="Update job")
 async def update_job(job: dict):
     try:
         job_id = job["job_id"]

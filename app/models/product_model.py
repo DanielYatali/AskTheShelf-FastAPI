@@ -27,6 +27,7 @@ class Product(Document):
     number_of_reviews: Optional[str] = ""
     qa: Optional[list] = []
     generated_review: Optional[str] = ""
+    affiliate_url: Optional[str] = ""
 
     def __repr__(self) -> str:
         return f'<Product {self.product_id}>'

@@ -46,3 +46,4 @@ class ProductOut(BaseModel):
     number_of_reviews: Optional[str] = ""
     qa: Optional[list] = []
     generated_review: Optional[str] = ""
+    affiliate_url: Optional[str] = ""

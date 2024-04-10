@@ -7,11 +7,12 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
 
 from app.models.job_model import Job
+from app.models.product_error_model import ProductError
 from app.models.product_model import Product
 from app.schemas.job_schema import JobIn, JobOut, JobRequest, JobUpdate
 from app.schemas.product_schema import ProductOut
 from app.services.job_service import JobService
-from app.services.product_service import ProductService
+from app.services.product_service import ProductService, ProductErrorService
 from app.services.llm_service import LLMService
 from app.core.logger import logger
 from app.utils.utils import extract_asin_from_url
@@ -24,6 +25,7 @@ async def update_job(request: Request, job: dict):
     try:
         job_id = job["job_id"]
         job = JobUpdate(**job)
+        job.status = "completed"
         updated_job = await JobService.update_job(job_id, job)
         if not updated_job:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job not found")
@@ -37,6 +39,16 @@ async def update_job(request: Request, job: dict):
         new_product = Product(**product_data)
         new_product.user_id = updated_job.user_id
         new_product = await ProductService.create_product(new_product)
+        errors = await ProductService.validate_product(new_product)
+        if len(errors) > 0:
+            new_product_error = ProductError(
+                product_id=product_id,
+                job_id=job_id,
+                user_id=updated_job.user_id,
+                error=errors,
+            )
+            await ProductErrorService.create_product_error(new_product_error)
+
         generated_review, embedding_text = await asyncio.gather(
             LLMService.generate_product_review(product_data),
             LLMService.generate_embedding_text(product_data)

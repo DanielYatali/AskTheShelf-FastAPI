@@ -7,16 +7,15 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 import os
-import sys
+from app.core.config import settings
 
 BOT_NAME = "scrapy"
 
 SPIDER_MODULES = ["scraper.spiders"]
 NEWSPIDER_MODULE = "spiders"
-MONGO_URI = 'mongodb+srv://Scraper:TzQkvr6fydIK233S@scraper.3d1axyn.mongodb.net/?retryWrites=true&w=majority&appName=scraper'  # MongoDB connection URI
-MONGO_DATABASE = 'scraper'  # MongoDB database name
+BASE_URL = settings.BASE_URL
 ITEM_PIPELINES = {
-    'scraper.pipelines.MongoPipeline': 300,
+    'scraper.pipelines.HttpPipeline': 300,
 }
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent

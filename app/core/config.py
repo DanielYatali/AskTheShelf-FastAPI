@@ -8,6 +8,7 @@ from app.core.logger import logger
 from app.models.job_model import Job
 from app.models.product_model import Product
 from app.models.user_model import User
+from app.models.product_error_model import ProductError
 
 
 class Settings(BaseSettings):
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
     PROJECT_NAME: str = "Amazon Scraper"
     MONGODB_CONNECTION_STRING: str = config('MONGODB_CONNECTION_STRING', cast=str)
+    BASE_URL: str = config('BASE_URL', cast=str)
 
     class Config:
         case_sensitive = True
@@ -34,11 +36,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-db_client = None
-
-
 async def init_db():
-    global db_client
     # Initiate connection to MongoDB
     logger.info("Connecting to MongoDB")
     db_client = AsyncIOMotorClient(settings.MONGODB_CONNECTION_STRING).scraper
@@ -48,7 +46,8 @@ async def init_db():
         document_models=[
             User,  # Ensure User is imported
             Job,  # Ensure Job is imported
-            Product  # Ensure Product is imported
+            Product,  # Ensure Product is imported
+            ProductError
         ],
     )
     logger.info("Connected to MongoDB")

@@ -4,12 +4,13 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
 
+from app.models.product_error_model import ProductError
 from app.models.product_model import Product
-from app.services.product_service import ProductService
+from app.services.product_service import ProductService, ProductErrorService
 from app.schemas.product_schema import ProductOut
 from app.services.llm_service import LLMService
 from app.core.logger import logger
-from app.core.config import db_client
+from app.config.database import product_collection
 
 product_router = APIRouter(dependencies=[Depends(HTTPBearer())])
 
@@ -17,6 +18,12 @@ product_router = APIRouter(dependencies=[Depends(HTTPBearer())])
 @product_router.get("/", summary="Get all products", response_model=List[ProductOut] or HTTPException)
 async def get_products(request: Request) -> List[Product]:
     return await ProductService.get_products()
+
+
+@product_router.get("/errors", summary="Get all product errors", response_model=List[ProductError] or HTTPException)
+async def get_product_errors(request: Request):
+    print("get_product_errors")
+    return await ProductErrorService.get_product_errors()
 
 
 @product_router.get("/{product_id}", summary="Get product by id", response_model=ProductOut or HTTPException)
@@ -41,16 +48,15 @@ async def create_product(request: Request, product: Product):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")
 
 
-@product_router.post("/embedding/search", summary="Search for similar products",
-                     response_model=List[ProductOut] or HTTPException)
+@product_router.post("/embedding/search", summary="Search for similar products")
 async def search_similar_products(request: Request, body: dict):
     try:
         query = body.get("query")
         if not query:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Query not provided")
         embedding = await LLMService.create_embedding(query)
-        product_collection = db_client["products"]
         excludes = [
+            "_id",
             "embedding",
             "reviews",
             "qa"
@@ -67,8 +73,8 @@ async def chat_with_product(request: Request, product_id: str, body: dict):
     try:
         query = body.get("query")
         product = await ProductService.get_product_by_id(product_id)
-        product_dict = product.json()
-        return LLMService.product_chat(product_dict, query)
+        product_dict = product.dict()
+        return await LLMService.product_chat(product_dict, query)
     except Exception as e:
         logger.error(e)
         raise HTTPException(status_code=404, detail="Product not found")
