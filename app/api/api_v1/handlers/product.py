@@ -4,10 +4,12 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
 
+from app.models.conversation_model import Conversation, Message
 from app.models.product_error_model import ProductError
 from app.models.product_model import Product
+from app.services.conversation_service import ConversationService
 from app.services.product_service import ProductService, ProductErrorService
-from app.schemas.product_schema import ProductOut
+from app.schemas.product_schema import ProductOut, ProductForUser
 from app.services.llm_service import LLMService
 from app.core.logger import logger
 from app.config.database import product_collection
@@ -26,7 +28,7 @@ async def get_product_errors(request: Request):
     return await ProductErrorService.get_product_errors()
 
 
-@product_router.get("/{product_id}", summary="Get product by id", response_model=ProductOut or HTTPException)
+@product_router.get("/{product_id}", summary="Get product by id", response_model=ProductForUser or HTTPException)
 async def get_product(request: Request, product_id: str):
     try:
         product = await ProductService.get_product_by_id(product_id)
@@ -61,8 +63,8 @@ async def search_similar_products(request: Request, body: dict):
             "reviews",
             "qa"
         ]
-        documents = await LLMService.find_similar_embeddings(product_collection, embedding, excludes)
-        return list(documents)
+        documents, message = await LLMService.find_similar_embeddings(product_collection, embedding, excludes, query, 5)
+        return documents
     except Exception as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error searching for similar products")
@@ -118,3 +120,45 @@ async def delete_product(request: Request, product_id: str):
     except Exception as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product not found")
+
+
+@product_router.post("/chat", summary="Chat with LLM")
+async def chat_with_llm(request: Request, body: dict):
+    try:
+        query = body.get("query")
+        if not query:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Query not provided")
+        user = request.state.user
+        user_id = user.user_id
+        user_conversation = await ConversationService.get_conversation_by_user_id(user_id)
+        if not user_conversation:
+            conversation = Conversation(user_id=user_id, messages=[])
+            user_conversation = await ConversationService.create_conversation(conversation)
+        user_message = Message(
+            role="user",
+            content=query,
+        )
+        response = await LLMService.get_action_from_llm(query, user_conversation)
+        user_conversation.messages.append(user_message)
+        if isinstance(response, dict):
+            assistant_message = Message(
+                role="assistant",
+                content=response['message'],
+                products=response['products'],
+            )
+            user_conversation.messages.append(assistant_message)
+        else:
+            assistant_message = Message(
+                role="assistant",
+                content=response,
+            )
+            user_conversation.messages.append(assistant_message)
+        await ConversationService.update_conversation(user_id, user_conversation)
+        return response
+
+
+
+
+    except Exception as e:
+        logger.error(e)
+        raise HTTPException(status_code=404, detail="Error chatting with LLM")

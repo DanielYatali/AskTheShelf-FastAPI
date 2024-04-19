@@ -16,6 +16,7 @@ class UserService:
             user_id=auth0_user.sub,
             first_name=auth0_user.given_name,
             last_name=auth0_user.family_name,
+            picture=auth0_user.picture,
         )
         await user.save()
         return user

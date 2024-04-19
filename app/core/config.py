@@ -9,6 +9,7 @@ from app.models.job_model import Job
 from app.models.product_model import Product
 from app.models.user_model import User
 from app.models.product_error_model import ProductError
+from app.models.conversation_model import Conversation
 
 
 class Settings(BaseSettings):
@@ -47,7 +48,8 @@ async def init_db():
             User,  # Ensure User is imported
             Job,  # Ensure Job is imported
             Product,  # Ensure Product is imported
-            ProductError
+            ProductError,
+            Conversation
         ],
     )
     logger.info("Connected to MongoDB")

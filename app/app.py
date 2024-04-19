@@ -23,6 +23,13 @@ allowed_origins = [
     "https://example.com",  # Replace with your actual domain
 ]
 
+
+@app.on_event("startup")
+async def app_startup():
+    await init_db()
+
+
+app.include_router(router)
 # Add CORSMiddleware to the application
 app.add_middleware(
     CORSMiddleware,
@@ -31,13 +38,5 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
 )
-
-
-@app.on_event("startup")
-async def app_startup():
-    await init_db()
-
-
-app.include_router(router)
 app.add_middleware(AuthMiddleware, allow_routes=["/users", "/api/v1/docs", "/api/v1/openapi.json", "/robots.txt",
                                                  "/api/v1/scrapy/update"])

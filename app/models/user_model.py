@@ -2,6 +2,8 @@ from datetime import datetime
 from beanie import Document, Indexed
 from typing import Optional
 
+from pydantic import Field
+
 
 class User(Document):
     user_id: str
@@ -10,6 +12,8 @@ class User(Document):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     roles: Optional[list] = ['user']
+    picture: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
     disabled: Optional[bool] = False
 
     def __repr__(self) -> str:

@@ -14,6 +14,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path not in self.allow_routes:
+            if request.method == "OPTIONS":
+                return await call_next(request)
             authorization: str = request.headers.get("Authorization")
             if not authorization:
                 return JSONResponse(content={"detail": "Authorization header is missing"}, status_code=401)
@@ -26,9 +28,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         status_code=401)
                 token = token_parts[1]
                 auth_result = await auth.verify_token(token)
-                user = await get_current_user(auth_result)
+                user = await get_current_user(auth_result, token)
                 request.state.user = user
-
+            except HTTPException as e:
+                if e.status_code == 404:
+                    return JSONResponse(content={"detail": "User not found"}, status_code=404)
             except Exception as e:
                 logger.error(e)
                 return JSONResponse(content={"detail": "Invalid token"}, status_code=401)

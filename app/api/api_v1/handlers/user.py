@@ -1,7 +1,6 @@
 from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
-from app.api.deps.user_deps import is_admin_user
 from app.models.user_model import User
 from app.schemas.user_schema import UserOut, Auth0User
 from app.services.user_service import UserService
@@ -32,9 +31,9 @@ async def get_user_by_email(request: Request, email: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@user_router.get("/admin", summary="Get all admin users", response_model=List[UserOut] or HTTPException)
-async def get_admin_users(user: User = Depends(is_admin_user)):
-    return await UserService.get_admin_users()
+# @user_router.get("/admin", summary="Get all admin users", response_model=List[UserOut] or HTTPException)
+# async def get_admin_users(user: User = Depends(is_admin_user)):
+#     return await UserService.get_admin_users()
 
 
 @user_router.get("/{user_id}", summary="Get user by id", response_model=UserOut or HTTPException)

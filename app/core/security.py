@@ -1,4 +1,6 @@
 from typing import Union, Any, Optional
+
+import aiohttp
 from fastapi import HTTPException, status, Depends
 from fastapi.security import SecurityScopes, HTTPAuthorizationCredentials, HTTPBearer
 from app.core.config import settings
@@ -29,6 +31,21 @@ class VerifyToken:
         # use any of the keys available
         jwks_url = f'https://{self.config.AUTH0_DOMAIN}/.well-known/jwks.json'
         self.jwks_client = jwt.PyJWKClient(jwks_url)
+
+    async def get_user_profile(self, token):
+        url = f"https://{self.config.AUTH0_DOMAIN}/userinfo"
+        headers = {
+            "Authorization": f"Bearer {token}"
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        raise UnauthorizedException("Failed to get user profile")
+        except Exception as e:
+            raise UnauthorizedException(str(e))
 
     async def verify_token(self, token: str) -> Union[dict, Any]:
         try:

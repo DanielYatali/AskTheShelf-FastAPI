@@ -4,6 +4,21 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class ProductValidateSearch(BaseModel):
+    product_id: str
+    embedding_text: str
+
+
+class ProductCard(BaseModel):
+    product_id: str
+    title: str
+    image_url: str
+    price: float
+    rating: Optional[float] = 0.0
+    domain: str
+    affiliate_url: Optional[str] = ""
+
+
 class ProductSchema(BaseModel):
     product_id: str
     user_id: Optional[str] = ""
@@ -45,5 +60,23 @@ class ProductOut(BaseModel):
     variants: Optional[dict] = {}
     number_of_reviews: Optional[str] = ""
     qa: Optional[list] = []
+    generated_review: Optional[str] = ""
+    affiliate_url: Optional[str] = ""
+
+
+class ProductForUser(BaseModel):
+    product_id: str
+    domain: str
+    title: str
+    description: str
+    price: float
+    image_url: str
+    rating: float
+    specs: dict
+    features: list
+    created_at: datetime
+    updated_at: datetime
+    variants: Optional[dict] = {}
+    number_of_reviews: Optional[str] = ""
     generated_review: Optional[str] = ""
     affiliate_url: Optional[str] = ""
