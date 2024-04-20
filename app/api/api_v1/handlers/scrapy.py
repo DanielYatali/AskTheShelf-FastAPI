@@ -6,11 +6,13 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
 
+from app.models.conversation_model import Message
 from app.models.job_model import Job
 from app.models.product_error_model import ProductError
 from app.models.product_model import Product
 from app.schemas.job_schema import JobIn, JobOut, JobRequest, JobUpdate
-from app.schemas.product_schema import ProductOut
+from app.schemas.product_schema import ProductOut, ProductCard
+from app.services.conversation_service import ConversationService
 from app.services.job_service import JobService
 from app.services.product_service import ProductService, ProductErrorService
 from app.services.llm_service import LLMService
@@ -38,6 +40,15 @@ async def update_job(request: Request, job: dict):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")
         new_product = Product(**product_data)
         new_product.user_id = updated_job.user_id
+        user_conversation = await ConversationService.get_conversation_by_user_id(new_product.user_id)
+        productOut = ProductCard(**new_product.dict())
+        assistant_message = Message(
+            role="assistant",
+            content="Here is the product you requested",
+            products=[productOut],
+        )
+        user_conversation.messages.append(assistant_message)
+        await ConversationService.update_conversation(new_product.user_id, user_conversation)
         new_product = await ProductService.create_product(new_product)
         errors = await ProductService.validate_product(new_product)
         if len(errors) > 0:
@@ -59,6 +70,7 @@ async def update_job(request: Request, job: dict):
         new_product.embedding_text = embedding_text
         new_product.updated_at = datetime.now()
         await ProductService.update_product(product_id, new_product)
+        await JobService.delete_job(job_id)
         return {
             "status": "success",
         }

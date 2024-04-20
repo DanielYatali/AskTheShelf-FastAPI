@@ -6,10 +6,12 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
 
+from app.models.conversation_model import Conversation, Message
 from app.models.job_model import Job
 from app.models.product_model import Product
 from app.schemas.job_schema import JobIn, JobOut, JobRequest, JobUpdate
-from app.schemas.product_schema import ProductOut
+from app.schemas.product_schema import ProductOut, ProductCard
+from app.services.conversation_service import ConversationService
 from app.services.job_service import JobService
 from app.services.product_service import ProductService
 from app.services.llm_service import LLMService
@@ -48,9 +50,29 @@ async def create_job(request: Request, job: JobRequest):
         if not asin:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a valid amazon url")
         clean_url = f"https://www.amazon.com/dp/{asin}"
+        user = request.state.user
+        user_id = user.user_id
+        user_conversation = await ConversationService.get_conversation_by_user_id(user_id)
+        if not user_conversation:
+            conversation = Conversation(user_id=user_id, messages=[])
+            user_conversation = await ConversationService.create_conversation(conversation)
+        user_message = Message(
+            role="user",
+            content=clean_url,
+        )
+        user_conversation.messages.append(user_message)
         product = await ProductService.get_product_by_id(asin)
         if product is not None:
-            return ProductOut(**product.dict())
+            productOut = ProductCard(**product.dict())
+            assistant_message = Message(
+                role="assistant",
+                content="Here is the product you requested",
+                products=[productOut],
+            )
+            user_conversation.messages.append(assistant_message)
+            await ConversationService.update_conversation(user_id, user_conversation)
+            return {"message": "Here is the product you requested", "products": [productOut]}
+
         new_job = Job(
             job_id=str(uuid.uuid4()),
             user_id=request.state.user.user_id,
@@ -60,6 +82,7 @@ async def create_job(request: Request, job: JobRequest):
         created_job = await JobService.create_job(new_job)
         command = ["scrapy", "crawl", "amazon", "-a", f"url={new_job.url}", "-a", f"job_id={new_job.job_id}"]
         subprocess.Popen(command, cwd="scrapy-project")
+        await ConversationService.update_conversation(user_id, user_conversation)
         return created_job
 
     except HTTPException as e:
@@ -86,6 +109,7 @@ async def update_job(job: dict):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")
         new_product = Product(**product_data)
         new_product.user_id = updated_job.user_id
+
         new_product = await ProductService.create_product(new_product)
         generated_review, embedding_text = await asyncio.gather(
             LLMService.generate_product_review(product_data),
@@ -97,6 +121,7 @@ async def update_job(job: dict):
         new_product.embedding_text = embedding_text
         new_product.updated_at = datetime.now()
         await ProductService.update_product(product_id, new_product)
+        await JobService.delete_job(job_id)
         return {
             "status": "success",
         }

@@ -12,4 +12,7 @@ conversation_router = APIRouter(dependencies=[Depends(HTTPBearer())])
                          response_model=Conversation or HTTPException)
 async def get_conversations(request: Request) -> Conversation:
     user = request.state.user
-    return await ConversationService.get_conversation_by_user_id(user.user_id)
+    conversations = await ConversationService.get_conversation_by_user_id(user.user_id)
+    if not conversations:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return conversations

@@ -41,6 +41,19 @@ async def get_product(request: Request, product_id: str):
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+@product_router.get("/{product_id}/card", summary="Get product by id", response_model=ProductForUser or HTTPException)
+async def get_product(request: Request, product_id: str):
+    try:
+        product = await ProductService.get_product_by_id(product_id)
+        if not product:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+        return product
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @product_router.post("/", summary="Create product", response_model=Product or HTTPException)
 async def create_product(request: Request, product: Product):
@@ -141,12 +154,20 @@ async def chat_with_llm(request: Request, body: dict):
         response = await LLMService.get_action_from_llm(query, user_conversation)
         user_conversation.messages.append(user_message)
         if isinstance(response, dict):
-            assistant_message = Message(
-                role="assistant",
-                content=response['message'],
-                products=response['products'],
-            )
-            user_conversation.messages.append(assistant_message)
+            if 'products' in response:
+                assistant_message = Message(
+                    role="assistant",
+                    content=response['message'],
+                    products=response['products'],
+                )
+                user_conversation.messages.append(assistant_message)
+            else:
+                assistant_message = Message(
+                    role="assistant",
+                    content=response['message'],
+                    related_products=response['related_products'],
+                )
+                user_conversation.messages.append(assistant_message)
         else:
             assistant_message = Message(
                 role="assistant",

@@ -9,6 +9,14 @@ class ProductValidateSearch(BaseModel):
     embedding_text: str
 
 
+def product_identifier_serializer(product):
+    return {
+        "product_id": product["product_id"],
+        "product_name": product["title"],
+        "domain": product["domain"]
+    }
+
+
 class ProductCard(BaseModel):
     product_id: str
     title: str

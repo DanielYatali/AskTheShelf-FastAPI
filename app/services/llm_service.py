@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.models.conversation_model import Conversation
 from app.schemas.llm_schema import ActionResponse
-from app.schemas.product_schema import ProductValidateSearch, ProductCard
+from app.schemas.product_schema import ProductValidateSearch, ProductCard,product_identifier_serializer
 from app.services.product_service import ProductService
 
 
@@ -239,6 +239,8 @@ class LLMService:
     async def get_action_from_llm(query, conversation: Conversation):
         try:
             response = await LLMService.manager(query, conversation)
+            if "action" not in response:
+                return response
             response = json.loads(response)
             actionResponse = ActionResponse(**response)
             match actionResponse.action:
@@ -249,7 +251,8 @@ class LLMService:
                     if actionResponse.product_id and actionResponse.product_id != "":
                         product = await ProductService.get_product_by_id(actionResponse.product_id)
                         response = await LLMService.product_chat(product.dict(), actionResponse.user_query)
-                        return response
+                        product_identifier = product_identifier_serializer(product.dict())
+                        return {"related_products": [product_identifier], "message": response}
                     elif actionResponse.embedding_query and actionResponse.embedding_query != "":
                         embedding = await LLMService.create_embedding(actionResponse.embedding_query)
                         excludes = [
@@ -260,13 +263,14 @@ class LLMService:
                         ]
                         documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
                                                                                       excludes,
-                                                                                      actionResponse.user_query, 1)
+                                                                                      actionResponse.embedding_query, 1)
                         if len(documents) == 0:
                             return ("No similar product found, we may not have that product in our database yet, "
                                     "try using the link feature to add it")
                         product = documents[0]
+                        productCard = ProductCard(**product)
                         response = await LLMService.product_chat(product, actionResponse.user_query)
-                        return response
+                        return {"products": [productCard], "message": response}
                 case "find_similar":
                     if actionResponse.product_id and actionResponse.product_id != "":
                         product = await ProductService.get_product_by_id(actionResponse.product_id)
@@ -279,7 +283,7 @@ class LLMService:
                         ]
                         documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
                                                                                       excludes,
-                                                                                      actionResponse.user_query, 5)
+                                                                                      actionResponse.embedding_query, 5)
                         if len(documents) == 0:
                             return ("No similar products found, we may not have that product in our database yet, "
                                     "try using the link feature to add it")
@@ -297,7 +301,7 @@ class LLMService:
                         ]
                         documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
                                                                                       excludes,
-                                                                                      actionResponse.user_query, 5)
+                                                                                      actionResponse.embedding_query, 5)
                         if len(documents) == 0:
                             return ("No similar products found, we may not have that product in our database yet, "
                                     "try using the link feature to add it")
@@ -310,8 +314,8 @@ class LLMService:
                     if actionResponse.products and len(actionResponse.products) > 0:
                         if len(actionResponse.products) > 2:
                             return "You cannot compare more than 2 products at a time"
-                        product1Id = actionResponse.products[0].product_id
-                        product2Id = actionResponse.products[1].product_id
+                        product1Id = actionResponse.products[0]["product_id"]
+                        product2Id = actionResponse.products[1]["product_id"]
                         excludes = [
                             "_id",
                             "embedding",
@@ -321,14 +325,15 @@ class LLMService:
                         product2 = None
                         if product1Id != "":
                             product1 = await ProductService.get_product_by_id(product1Id)
+                            product1 = product1.dict()
                         else:
-                            product1Name = actionResponse.products[0].product_name
+                            product1Name = actionResponse.products[0]["product_name"]
                             if product1Name != "":
                                 product1_embedding = await LLMService.create_embedding(product1Name)
                                 product1_documents, message = await LLMService.find_similar_embeddings(
                                     product_collection,
                                     product1_embedding,
-                                    excludes, actionResponse.user_query, 1)
+                                    excludes, actionResponse.embedding_query, 1)
                                 if len(product1_documents) == 0:
                                     return (
                                         "No similar product found, we may not have that product in our database yet, "
@@ -337,21 +342,24 @@ class LLMService:
 
                         if product2Id != "":
                             product2 = await ProductService.get_product_by_id(product2Id)
+                            product2 = product2.dict()
                         else:
-                            product2Name = actionResponse.products[1].product_name
+                            product2Name = actionResponse.products[1]["product_name"]
                             product2_embedding = await LLMService.create_embedding(product2Name)
 
                             product2_documents, message = await LLMService.find_similar_embeddings(product_collection,
                                                                                                    product2_embedding,
                                                                                                    excludes,
-                                                                                                   actionResponse.user_query,
+                                                                                                   actionResponse.embedding_query,
                                                                                                    1)
                             if len(product2_documents) == 0:
                                 return ("No similar product found, we may not have that product in our database yet, "
                                         "try using the link feature to add it")
                             product2 = product2_documents[0]
                         response = await LLMService.compare_products(product1, product2, actionResponse.user_query)
-                        return response
+                        product1Identifier = product_identifier_serializer(product1)
+                        product2Identifier = product_identifier_serializer(product2)
+                        return {"related_products": [product1Identifier, product2Identifier], "message": response}
                 case "search":
                     if actionResponse.embedding_query and actionResponse.embedding_query != "":
                         embedding = await LLMService.create_embedding(actionResponse.embedding_query)
@@ -363,7 +371,7 @@ class LLMService:
                         ]
                         documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
                                                                                       excludes,
-                                                                                      actionResponse.user_query, 5)
+                                                                                      actionResponse.embedding_query, 5)
                         if len(documents) == 0:
                             return ("No similar products found, we may not have that product in our database yet, "
                                     "try using the link feature to add it")

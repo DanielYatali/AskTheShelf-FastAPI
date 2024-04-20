@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 import logging
 import os
@@ -6,18 +5,11 @@ import re
 from random import randint
 from app.schemas.job_schema import JobSchema as Job, JobUpdate
 from app.schemas.product_schema import ProductSchema as Product
-from app.schemas.schemas import job_serializer, product_serializer
-import json
 import scrapy
 
-# import the env variables
 from dotenv import load_dotenv
 
-from app.services.job_service import JobService
-from app.services.llm_service import LLMService
-from app.services.product_service import ProductService
-from app.models.job_model import Job as JobModel
-from app.models.product_model import Product as ProductModel
+
 
 load_dotenv()
 
