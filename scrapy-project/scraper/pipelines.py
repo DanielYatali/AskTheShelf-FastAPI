@@ -4,13 +4,9 @@
 # See: https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 import asyncio
 import json
+import logging
 from datetime import datetime
-
 import aiohttp
-# useful for handling different item types with a single interface
-from itemadapter import ItemAdapter
-
-import pymongo
 
 
 def datetime_serializer(obj):
@@ -31,13 +27,17 @@ class HttpPipeline(object):
     async def post_item(self, item):
         # Asynchronous POST request using aiohttp
         data = json.dumps(item, default=datetime_serializer)
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.endpoint_uri + "/api/v1/scrapy/update", data=data,
-                                    headers={"Content-Type": "application/json"}) as response:
-                if response.status != 200:
-                    # You can adjust logging according to your needs
-                    response_text = await response.text()
-                    print(f"Failed to post item to endpoint: {response_text}")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.endpoint_uri + "/api/v1/scrapy/update", data=data,
+                                        headers={"Content-Type": "application/json"}) as response:
+                    if response.status != 200:
+                        # You can adjust logging according to your needs
+                        response_text = await response.text()
+                        print(f"Failed to post item to endpoint: {response_text}")
+                        logging.error(f"Failed to post item to endpoint")
+        except Exception as e:
+            logging.error(f"Failed to post item to endpoint: {e}")
 
     def process_item(self, item, spider):
         # Convert the item to a dict and schedule the post_item coroutine

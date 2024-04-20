@@ -7,16 +7,17 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 import os
-from app.core.config import settings
+from dotenv import load_dotenv
+load_dotenv()
 
 BOT_NAME = "scrapy"
 
 SPIDER_MODULES = ["scraper.spiders"]
 NEWSPIDER_MODULE = "spiders"
-BASE_URL = settings.BASE_URL
-ITEM_PIPELINES = {
-    'scraper.pipelines.HttpPipeline': 300,
-}
+BASE_URL = os.getenv("BASE_URL")
+# ITEM_PIPELINES = {
+#     'scraper.pipelines.HttpPipeline': 300,
+# }
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 # USER_AGENT = "projectname (+http://www.yourdomain.com)"

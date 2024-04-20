@@ -1,13 +1,8 @@
 import asyncio
-import subprocess
-import uuid
 from datetime import datetime
-from typing import List
-from fastapi import APIRouter, HTTPException, status, Depends, Request
-from fastapi.security import HTTPBearer
+from fastapi import APIRouter, HTTPException, status, Request
 
 from app.models.conversation_model import Message
-from app.models.job_model import Job
 from app.models.product_error_model import ProductError
 from app.models.product_model import Product
 from app.schemas.job_schema import JobIn, JobOut, JobRequest, JobUpdate
@@ -17,7 +12,6 @@ from app.services.job_service import JobService
 from app.services.product_service import ProductService, ProductErrorService
 from app.services.llm_service import LLMService
 from app.core.logger import logger
-from app.utils.utils import extract_asin_from_url
 
 scrapy_router = APIRouter()
 

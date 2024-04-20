@@ -40,3 +40,4 @@ app.add_middleware(
 )
 app.add_middleware(AuthMiddleware, allow_routes=["/users", "/api/v1/docs", "/api/v1/openapi.json", "/robots.txt",
                                                  "/api/v1/scrapy/update"])
+

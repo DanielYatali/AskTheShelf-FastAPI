@@ -1,18 +1,16 @@
 import datetime
+import json
 import logging
 import os
 import re
 from random import randint
-from app.schemas.job_schema import JobSchema as Job, JobUpdate
-from app.schemas.product_schema import ProductSchema as Product
 import scrapy
 
-from dotenv import load_dotenv
-
-
-
-load_dotenv()
-
+def datetime_serializer(obj):
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 def safe_extract(response_or_selector, queries, query_type='css', extract_first=True, default_value=None):
     """
@@ -372,41 +370,40 @@ class AmazonSpider(scrapy.Spider):
             if review['author'] not in [r['author'] for r in reviews]:
                 reviews.append(review)
         qa = self.qa
-        product = Product(
-            product_id=self.product['product_id'],
-            job_id=self.job_id,
-            domain=self.product['domain'],
-            title=self.product['title'],
-            description=self.product['description'],
-            price=self.product['price'],
-            image_url=self.product['image_url'],
-            specs=self.product['specs'],
-            features=self.product['features'],
-            rating=self.product['rating'],
-            reviews=reviews,
-            created_at=self.product['created_at'],
-            updated_at=self.product['updated_at'],
-            similar_products=self.product['similar_products'],
-            variants=self.product['variants'],
-            number_of_reviews=self.product['number_of_reviews'],
-            qa=qa,
-            generated_review='',
-        )
+        product = {
+            "product_id": self.product['product_id'],
+            "job_id": self.job_id,
+            "domain": self.product['domain'],
+            "title": self.product['title'],
+            "description": self.product['description'],
+            "price": self.product['price'],
+            "image_url": self.product['image_url'],
+            "specs": self.product['specs'],
+            "features": self.product['features'],
+            "rating": self.product['rating'],
+            "reviews": reviews,
+            "created_at": self.product['created_at'],
+            "updated_at": self.product['updated_at'],
+            "similar_products": self.product['similar_products'],
+            "variants": self.product['variants'],
+            "number_of_reviews": self.product['number_of_reviews'],
+            "qa": qa,
+            "generated_review": ''
+        }
 
         # merge all the reviews check the author to avoid duplicates
 
-        product_dict = product.dict()
-        job = Job(
-            job_id=self.job_id,
-            status="completed",
-            end_time=datetime.datetime.utcnow().isoformat(),
-            start_time=datetime.datetime.utcnow().isoformat(),
-            result=product_dict,
-            url=self.start_urls[0],
-            error={}
-        )
-        job_dict = job.dict()
-        return job_dict
+
+        job = {
+            "job_id": self.job_id,
+            "status": "completed",
+            "end_time": datetime.datetime.utcnow().isoformat(),
+            "start_time": datetime.datetime.utcnow().isoformat(),
+            "result": product,
+            "url": self.start_urls[0],
+            "error": {}
+        }
+        return job
 
     def close_job(self, response):
         # Logic to handle the response and close the job
@@ -436,7 +433,9 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield job
+            data = json.dumps(job, default=datetime_serializer)
+            endpoint = os.getenv("BASE_URL")
+            yield scrapy.Request(url=endpoint + "/api/v1/scrapy/update", callback=self.close_job, body=data, method='POST')
 
     def parse_critical_reviews(self, response):
         critical_reviews = get_reviews(response, [])
@@ -444,7 +443,9 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield job
+            data = json.dumps(job, default=datetime_serializer)
+            endpoint = os.getenv("BASE_URL")
+            yield scrapy.Request(url=endpoint + "/api/v1/scrapy/update", callback=self.close_job, body=data, method='POST')
 
     def parse_positive_reviews(self, response):
         positive_reviews = get_reviews(response, [])
@@ -452,7 +453,9 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield job
+            data = json.dumps(job, default=datetime_serializer)
+            endpoint = os.getenv("BASE_URL")
+            yield scrapy.Request(url=endpoint + "/api/v1/scrapy/update", callback=self.close_job, body=data, method='POST')
 
     def extract_questions_and_answers(self, response):
         qa_pairs = []
@@ -489,4 +492,6 @@ class AmazonSpider(scrapy.Spider):
         self.requests_completed += 1
         if self.requests_completed == self.requests_needed:
             job = self.generate_job()
-            yield job
+            data = json.dumps(job, default=datetime_serializer)
+            endpoint = os.getenv("BASE_URL")
+            yield scrapy.Request(url=endpoint + "/api/v1/scrapy/update", callback=self.close_job, body=data, method='POST')
