@@ -21,6 +21,7 @@ app = FastAPI(
 allowed_origins = [
     "http://localhost:3000",  # Assuming your frontend runs on localhost:3000
     "https://example.com",  # Replace with your actual domain
+    "https://asktheshelf.up.railway.app",
 ]
 
 
