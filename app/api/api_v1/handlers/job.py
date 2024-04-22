@@ -3,8 +3,11 @@ import subprocess
 import uuid
 from datetime import datetime
 from typing import List
+
+import aiohttp
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
+from app.core.config import settings
 
 from app.models.conversation_model import Conversation, Message
 from app.models.job_model import Job
@@ -80,8 +83,23 @@ async def create_job(request: Request, job: JobRequest):
             product_id=asin,
         )
         created_job = await JobService.create_job(new_job)
-        command = ["scrapy", "crawl", "amazon", "-a", f"url={new_job.url}", "-a", f"job_id={new_job.job_id}"]
-        subprocess.Popen(command, cwd="scrapy-project")
+        scraper_url = settings.SCRAPER_URL
+        if not scraper_url:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scraper URL not found")
+        scraper_url += "/schedule.json"
+        # Asynchronous POST request using aiohttp
+        data = {
+            "project": "default",
+            "spider": "amazon",
+            "job_id": new_job.job_id,
+            "url": new_job.url,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(scraper_url, data=data) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to post job to scraper")
+        # command = ["scrapy", "crawl", "amazon", "-a", f"url={new_job.url}", "-a", f"job_id={new_job.job_id}"]
+        # subprocess.Popen(command, cwd="scrapy-project")
         await ConversationService.update_conversation(user_id, user_conversation)
         return created_job
 

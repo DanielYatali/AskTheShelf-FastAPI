@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Amazon Scraper"
     MONGODB_CONNECTION_STRING: str = config('MONGODB_CONNECTION_STRING', cast=str)
     BASE_URL: str = config('BASE_URL', cast=str)
+    SCRAPER_URL: str = config('SCRAPER_URL', cast=str)
 
     class Config:
         case_sensitive = True

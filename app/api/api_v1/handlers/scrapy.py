@@ -1,5 +1,7 @@
 import asyncio
 from datetime import datetime
+
+import requests
 from fastapi import APIRouter, HTTPException, status, Request
 
 from app.models.conversation_model import Message
@@ -72,3 +74,21 @@ async def update_job(request: Request, job: dict):
     except Exception as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job not found")
+
+
+@scrapy_router.get("/update")
+async def run_spider():
+    scrapyd_url = "http://localhost:6800/schedule.json"  # Adjust if Scrapyd is not running on localhost
+    data = {
+        'project': 'default',
+        'spider': 'amazon',
+        'url': 'https://www.amazon.com/dp/B07VGRJDFY',
+        'job_id': '12345'
+    }
+    response = requests.post(scrapyd_url, data=data)
+    if response.status_code == 200:
+        # Scrapyd successfully accepted the request
+        return response.json()
+    else:
+        # Something went wrong
+        raise HTTPException(status_code=response.status_code, detail="Scrapyd failed to schedule the spider")

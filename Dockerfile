@@ -13,7 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the app, prompts, and scrapy-project directories into the container
 COPY app /app/app
 COPY prompts /app/prompts
-COPY scrapy-project /app/scrapy-project
 
 
 # Make port 8000 available to the world outside this container
