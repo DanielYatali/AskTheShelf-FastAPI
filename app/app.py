@@ -23,7 +23,8 @@ allowed_origins = [
     "https://example.com",  # Replace with your actual domain
     "https://asktheshelf.up.railway.app",
     "http://localhost:6800",
-    "https://asktheshelfscraper.up.railway.app"
+    "https://asktheshelfscraper.up.railway.app",
+    "https://www.asktheshelf.com"
 ]
 
 
