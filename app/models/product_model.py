@@ -26,7 +26,9 @@ class Product(Document):
     variants: Optional[dict] = {}
     number_of_reviews: Optional[str] = ""
     qa: Optional[list] = []
+    stock: Optional[str] = ""
     generated_review: Optional[str] = ""
+    discount_percentage: Optional[float] = 0.0
     affiliate_url: Optional[str] = ""
 
     def __repr__(self) -> str:

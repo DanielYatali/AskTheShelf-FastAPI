@@ -1,6 +1,57 @@
 import asyncio
+import json
 
 from app.services.llm_service import LLMService
+
+# Read prompts from a list of files
+def read_prompts(prompt_files):
+    prompts = []
+    for filename in prompt_files:
+        try:
+            with open(filename, mode='r') as file:
+                prompts.append(file.read())
+        except FileNotFoundError:
+            print(f"Error: {filename} was not found.")
+        except Exception as e:
+            print(f"An error occurred while reading {filename}: {e}")
+    return prompts
+
+# Run a conversation based on a prompt and product information
+async def run_conversation(prompt, product, user_query):
+    conversation = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": "I'm looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?"},
+        {"role": "system", "content": json.dumps(product)},
+        {"role": "user", "content": user_query}
+    ]
+    response = await LLMService.make_llm_request(conversation)
+    return response
+
+# Main function to manage test execution and write results
+def main():
+    prompt_files = ["manager.txt"]
+    prompts = read_prompts(prompt_files)
+    product = {
+        "product_id": "B0CXX7T52Q",
+        "title": "Lenovo Legion 5 Gaming Laptop",
+        "price": 1179.99,
+        "image_url": "https://example.com/image.jpg"
+    }
+    user_query = "What is the weight of this product?"
+
+    results = []
+    loop = asyncio.get_event_loop()
+    for prompt in prompts:
+        try:
+            result = loop.run_until_complete(run_conversation(prompt, product, user_query))
+            results.append({"prompt": prompt, "response": result})
+        except Exception as e:
+            results.append({"prompt": prompt, "error": str(e)})
+
+    # Write results to a file
+    with open('test_results.json', 'w') as outfile:
+        json.dump(results, outfile, indent=4)
+
 
 
 def test_manager_test():
@@ -21,65 +72,9 @@ def test_manager_test():
         "product_id": "B0CXX7T52Q",
         "domain": "www.amazon.com",
         "title": "Lenovo Legion 5 Gaming Laptop, 15.6\" WQHD 165Hz Display, 8-Core AMD Ryzen 7 7735HS, NVIDIA Geforce RTX 4060, 32GB DDR5 RAM, 1TB NVMe SSD, Backlit Keyboard, WiFi 6, HDMI, Win 11, w/CUE Accessories",
-        "description": "Lenovo Legion 5 Gaming Laptop",
         "price": 1179.99,
         "image_url": "https://m.media-amazon.com/images/I/71OF9CFOuUL._AC_SX300_SY300_.jpg",
         "rating": 0.0,
-        "specs": {
-            "ASIN": "B0CXX7T52Q",
-            "Customer Reviews": "",
-            "Best Sellers Rank": "",
-            "Date First Available": "March 13, 2024",
-            "Standing screen display size": "‎15.6 Inches",
-            "Screen Resolution": "‎2560 x 1440 pixels",
-            "Processor": "‎4.75 GHz ryzen_7",
-            "RAM": "‎DDR5",
-            "Hard Drive": "‎1 TB SSD",
-            "Graphics Coprocessor": "‎NVIDIA GeForce RTX 4060",
-            "Chipset Brand": "‎NVIDIA",
-            "Card Description": "‎Dedicated",
-            "Brand": "‎Lenovo",
-            "Item Weight": "‎8.78 pounds",
-            "Product Dimensions": "‎14.13 x 10.33 x 0.95 inches",
-            "Item Dimensions  LxWxH": "‎14.13 x 10.33 x 0.95 inches",
-            "Color": "‎Storm Grey",
-            "Processor Brand": "‎Intel",
-            "Number of Processors": "‎8",
-            "Hard Drive Interface": "‎PCIE x 4"
-        },
-        "features": [
-            "【8-Core Processor】AMD Ryzen 7 7735HS, 8 Cores and 16 Threads, 3.2GHz Base Clock, Up to 4.75GHz Boost Clock, 16MB Cache, AMD Radeon 680M. Providing impressive processing power for seamless multitasking, content creation and gaming.",
-            "【NVIDIA Geforce RTX 4060】Gaming Excellence Elevate your gaming experience with the NVIDIA GeForce RTX 4060 8GB GPU, delivering ultra-realistic graphics and smooth frame rates. Dive into the latest AAA titles and esports games with confidence.",
-            "【Gaming Display】15.6\" WQHD (2560x1440) IPS 350nits Anti-glare, 100% sRGB, 165Hz, Dolby Vision, FreeSync, G-SYNC. Enjoy true-to-life colors and smooth motion, whether you're gaming, watching videos, or working on creative projects.",
-            "【Upgraded to 32GB DDR5 Memory】Substantial high-bandwidth RAM to smoothly run your games and photo- and video-editing applications, as well as multiple programs and browser tabs all at once.",
-            "【Upgraded to 1TB NVMe SSD】Get up to 15x faster performance than a traditional hard drive. Give you a long-lasting and smooth experience, both system boot up and application start are very fast."
-        ],
-        "created_at": "2024-04-17T02:24:00.694000",
-        "updated_at": "2024-04-16T22:24:18.653000",
-        "variants": {
-            "Capacity:": [
-                {
-                    "name": "16GB DDR5 | 1TB NVMe SSD"
-                },
-                {
-                    "name": "16GB DDR5 | 512GB NVMe SSD"
-                },
-                {
-                    "name": "32GB DDR5 | 1TB NVMe SSD"
-                },
-                {
-                    "name": "32GB DDR5 | 2TB NVMe SSD"
-                },
-                {
-                    "name": "64GB DDR5 | 1TB NVMe SSD"
-                },
-                {
-                    "name": "64GB DDR5 | 2TB NVMe SSD"
-                }
-            ],
-            "Style:": []
-        },
-        "number_of_reviews": "2",
         "affiliate_url": ""
     }
     conversation = [

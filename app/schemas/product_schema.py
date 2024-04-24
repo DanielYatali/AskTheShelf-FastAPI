@@ -24,7 +24,9 @@ class ProductCard(BaseModel):
     price: float
     rating: Optional[float] = 0.0
     domain: str
+    stock: Optional[str] = ""
     affiliate_url: Optional[str] = ""
+    discount_percentage: Optional[float] = 0.0
 
 
 class ProductSchema(BaseModel):
@@ -46,6 +48,8 @@ class ProductSchema(BaseModel):
     variants: Optional[dict] = {}
     number_of_reviews: Optional[str] = ""
     qa: Optional[list] = []
+    stock: Optional[str] = ""
+    discount_percentage: Optional[float] = 0.0
     generated_review: Optional[str] = ""
 
 
@@ -69,6 +73,8 @@ class ProductOut(BaseModel):
     number_of_reviews: Optional[str] = ""
     qa: Optional[list] = []
     generated_review: Optional[str] = ""
+    stock: Optional[str] = ""
+    discount_percentage: Optional[float] = 0.0
     affiliate_url: Optional[str] = ""
 
 
@@ -88,3 +94,6 @@ class ProductForUser(BaseModel):
     number_of_reviews: Optional[str] = ""
     generated_review: Optional[str] = ""
     affiliate_url: Optional[str] = ""
+    stock: Optional[str] = ""
+    discount_percentage: Optional[float] = 0.0
+
