@@ -3,7 +3,7 @@ from datetime import datetime
 
 import requests
 from fastapi import APIRouter, HTTPException, status, Request, BackgroundTasks
-
+from app.utils.utils import make_affiliate_link
 from app.models.conversation_model import Message
 from app.models.product_error_model import ProductError
 from app.models.product_model import Product
@@ -102,6 +102,8 @@ async def handle_long_running_tasks(updated_job):
     if not product_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No product data found in job")
     product_id = product_data["product_id"]
+    affiliate_url = make_affiliate_link(updated_job.url)
+    product_data["affiliate_url"] = affiliate_url
     existing_product = await ProductService.get_product_by_id(product_id)
     if existing_product:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")

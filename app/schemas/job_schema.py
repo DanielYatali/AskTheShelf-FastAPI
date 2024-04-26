@@ -18,6 +18,7 @@ class JobRequest(BaseModel):
 class JobUpdate(BaseModel):
     job_id: str
     status: str
+    url: Optional[str] = ""
     end_time: Optional[datetime] = Field(None, description="The end time of the job")
     result: Optional[dict] = Field(None, description="The result of the job")
     error: Optional[dict] = Field(None, description="The error of the job")

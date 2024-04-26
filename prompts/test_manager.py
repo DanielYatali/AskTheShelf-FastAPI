@@ -3,6 +3,7 @@ import json
 
 from app.services.llm_service import LLMService
 
+
 # Read prompts from a list of files
 def read_prompts(prompt_files):
     prompts = []
@@ -16,16 +17,19 @@ def read_prompts(prompt_files):
             print(f"An error occurred while reading {filename}: {e}")
     return prompts
 
+
 # Run a conversation based on a prompt and product information
 async def run_conversation(prompt, product, user_query):
     conversation = [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": "I'm looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?"},
+        {"role": "user",
+         "content": "I'm looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?"},
         {"role": "system", "content": json.dumps(product)},
         {"role": "user", "content": user_query}
     ]
     response = await LLMService.make_llm_request(conversation)
     return response
+
 
 # Main function to manage test execution and write results
 def main():
@@ -53,7 +57,6 @@ def main():
         json.dump(results, outfile, indent=4)
 
 
-
 def test_manager_test():
     promptFile = "manager.txt"
     prompt = ""
@@ -67,7 +70,7 @@ def test_manager_test():
         print(f"An error occurred: {e}")
         return
 
-    user_query = "What is the weight of this product?"
+    user_query = "how much does it weigh?"
     product = {
         "product_id": "B0CXX7T52Q",
         "domain": "www.amazon.com",
@@ -82,14 +85,14 @@ def test_manager_test():
             "role": "system",
             "content": prompt
         },
-        {
-            "role": "user",
-            "content": "I looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?",
-        },
-        {
-            "role": "system",
-            "content": f"{product}"
-        },
+        # {
+        #     "role": "user",
+        #     "content": "I looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?",
+        # },
+        # {
+        #     "role": "system",
+        #     "content": f"{product}"
+        # },
         {
             "role": "user",
             "content": user_query

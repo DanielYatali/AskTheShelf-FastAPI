@@ -161,6 +161,8 @@ async def chat_with_llm(request: Request, body: dict):
                     products=response['products'],
                 )
                 user_conversation.messages.append(assistant_message)
+                await ConversationService.update_conversation(user_id, user_conversation)
+                return assistant_message
             else:
                 assistant_message = Message(
                     role="assistant",
@@ -168,17 +170,17 @@ async def chat_with_llm(request: Request, body: dict):
                     related_products=response['related_products'],
                 )
                 user_conversation.messages.append(assistant_message)
+                user_conversation.messages.append(assistant_message)
+                await ConversationService.update_conversation(user_id, user_conversation)
+                return assistant_message
         else:
             assistant_message = Message(
                 role="assistant",
                 content=response,
             )
             user_conversation.messages.append(assistant_message)
-        await ConversationService.update_conversation(user_id, user_conversation)
-        return response
-
-
-
+            await ConversationService.update_conversation(user_id, user_conversation)
+            return assistant_message
 
     except Exception as e:
         logger.error(e)

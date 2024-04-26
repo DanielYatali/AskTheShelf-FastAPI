@@ -113,6 +113,12 @@ class LLMService:
                 prompt = await file.read()
 
             product.pop("embedding", None)
+            product.pop("similar_products", None)
+            product.pop("qa", None)
+            product.pop("embedding_text", None)
+            product.pop("user_id", None)
+            product.pop("updated_at", None)
+            product.pop("created_at", None)
             # Configure your OpenAI client properly here
             client = OpenAI()
 
@@ -239,12 +245,16 @@ class LLMService:
     async def get_action_from_llm(query, conversation: Conversation):
         try:
             response = await LLMService.manager(query, conversation)
+            logger.info("Response from manager:" + response)
             if "action" not in response:
                 return response
             response = json.loads(response)
             actionResponse = ActionResponse(**response)
             match actionResponse.action:
                 case "none":
+                    if actionResponse.response:
+                        return actionResponse.response
+                case "more_info":
                     if actionResponse.response:
                         return actionResponse.response
                 case "get_product_details":

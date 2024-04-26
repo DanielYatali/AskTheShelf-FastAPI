@@ -1,3 +1,5 @@
+from typing import Dict
+
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
 
@@ -16,3 +18,12 @@ async def get_conversations(request: Request) -> Conversation:
     if not conversations:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     return conversations
+
+
+@conversation_router.delete("/{conversation_id}", summary="Delete conversation by id")
+async def delete_conversation(request: Request) -> dict[str, str]:
+    user = request.state.user
+    conversation = await ConversationService.delete_conversation(user.user_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return {"message": "Conversation deleted successfully"}
