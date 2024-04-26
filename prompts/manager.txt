@@ -20,7 +20,7 @@ Example 1:
 User query: "I want shoes like the Nike Air Max."
 Expected output: {
   "action": "find_similar",
-  "user_query": "shoes like the Nike Air Max"
+  "user_query": "shoes like the Nike Air Max",
   "embedding_query": "Nike Air Max",
   "product_id": ""
   }
@@ -31,11 +31,13 @@ User query: "How does the MacBook Pro compare to the Dell XPS?"
 Expected output: {
   "action": "compare_products",
   "products": [
-    {"product_name": "MacBook Pro",
+    {
+     "product_name": "MacBook Pro",
      "product_id": ""
     },
-    {"product_name": "Dell XPS",
-    "product_id": ""
+    {
+     "product_name": "Dell XPS",
+     "product_id": ""
     }
   ],
   "user_query": "How does the MacBook Pro compare to the Dell XPS?"
