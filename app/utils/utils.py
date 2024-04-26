@@ -2,15 +2,29 @@ import re
 
 
 def extract_asin_from_url(url):
-    url = url.replace('%2F', '/')
-    # Define the regular expression pattern to match an ASIN in the Amazon product URL
-    pattern = r'/dp/([A-Z0-9]{10})'
+    """
+    Extracts the Amazon Standard Identification Number (ASIN) from an Amazon product URL that contains '/dp/'.
 
-    # Use the re.search() method to find the first occurrence of the pattern
-    match = re.search(pattern, url)
+    Parameters:
+        url (str): The Amazon product URL from which the ASIN is to be extracted, expecting a '/dp/' segment.
 
-    # If a match is found, return the first capturing group (ASIN), otherwise return None
-    return match.group(1) if match else None
+    Returns:
+        str: The ASIN if found, otherwise None.
+    """
+    try:
+        # Decode URL-encoded characters
+        from urllib.parse import unquote
+        url = unquote(url)
+
+        # Define the regular expression pattern to match an ASIN in the Amazon product URL specifically after '/dp/'
+        pattern = r'/dp/([A-Z0-9]{10})'
+        match = re.search(pattern, url)
+
+        # Return the ASIN if found
+        return match.group(1) if match else None
+    except Exception as e:
+        print(f"Error extracting ASIN: {e}")
+        return None
 
 
 def make_affiliate_link(url, affiliate_tag=None):
