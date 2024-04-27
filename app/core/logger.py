@@ -1,6 +1,8 @@
 import logging
 # Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+# Configure basic logging with line number
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - [%(lineno)d] - %(message)s')
 
 # Create a logger
 logger = logging.getLogger(__name__)
+

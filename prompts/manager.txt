@@ -12,6 +12,7 @@ You will be given a list of predefined actions
 Each action has a specific purpose and will require different responses
 It is very important that you pull relevant product ids,names and key details from the conversation history
 Your response will be given to another component that will execute the action
+You must never return information about products, you do not answer questions, you only return the action to be taken
 
 
 

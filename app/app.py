@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Security
+from fastapi import FastAPI, Depends, HTTPException, status, Security, Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -33,6 +34,15 @@ async def app_startup():
     await init_db()
 
 
+@app.exception_handler(Exception)
+async def exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"message": "An internal server error occurred"},
+    )
+
+
 app.include_router(router)
 # Add CORSMiddleware to the application
 app.add_middleware(
@@ -44,4 +54,3 @@ app.add_middleware(
 )
 app.add_middleware(AuthMiddleware, allow_routes=["/users", "/api/v1/docs", "/api/v1/openapi.json", "/robots.txt",
                                                  "/api/v1/scrapy/update"])
-
