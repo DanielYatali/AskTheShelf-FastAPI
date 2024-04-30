@@ -31,3 +31,9 @@ def make_affiliate_link(url, affiliate_tag=None):
     if not affiliate_tag:
         affiliate_tag = '070777-20'
     return f"{url}?tag={affiliate_tag}"
+
+
+def make_affiliate_link_from_asin(asin, affiliate_tag=None):
+    if not affiliate_tag:
+        affiliate_tag = '070777-20'
+    return f"https://www.amazon.com/dp/{asin}?tag={affiliate_tag}"

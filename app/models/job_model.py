@@ -7,13 +7,16 @@ from pydantic import Field
 
 class Job(Document):
     job_id: Indexed(str, unique=True)
-    product_id: str
     status: str = "Pending"
+    query: Optional[str] = ""
+    user_query: Optional[str] = ""
     start_time: datetime = Field(default_factory=datetime.now)
-    user_id: Optional[str] = None
+    action: Optional[str] = ""
+    user_id: Indexed(str)
+    scraper_id: Optional[str] = ""
     url: str
     end_time: Optional[datetime] = None
-    result: Optional[dict] = {}
+    result: Optional[list] = []
     error: Optional[dict] = {}
 
     def __repr__(self) -> str:

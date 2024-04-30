@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+
 async def init_db():
     # Initiate connection to MongoDB
     logger.info("Connecting to MongoDB")

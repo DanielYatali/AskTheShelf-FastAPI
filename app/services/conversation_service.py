@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from app.models.conversation_model import Conversation
@@ -27,7 +28,7 @@ class ConversationService:
         if not existing_conversation:
             return None
         existing_conversation.messages = conversation.messages
-        existing_conversation.updated_at = conversation.updated_at
+        existing_conversation.updated_at = datetime.now()
         if len(existing_conversation.messages) > 30:
             existing_conversation.messages.pop(0)
         await existing_conversation.save()

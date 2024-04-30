@@ -80,7 +80,8 @@ async def create_job(request: Request, job: JobRequest):
             job_id=str(uuid.uuid4()),
             user_id=request.state.user.user_id,
             url=clean_url,
-            product_id=asin,
+            action="link",
+            scraper_id="amazon",
         )
         created_job = await JobService.create_job(new_job)
         scraper_url = settings.SCRAPER_URL

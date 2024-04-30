@@ -14,8 +14,6 @@ class ProductService:
             errorMessages.append("Rating must be between 0 and 5")
         if not product.title or product.title == "":
             errorMessages.append("Title is required")
-        if not product.description or product.description == "":
-            errorMessages.append("Description is required")
         if not product.domain or product.domain == "":
             errorMessages.append("Domain is required")
         if not product.image_url or product.image_url == "":

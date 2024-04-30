@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI, Depends, HTTPException, status, Security, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
@@ -12,6 +14,7 @@ from app.api.api_v1.router import router
 from app.core.logger import logger
 from app.core.middlewares import AuthMiddleware
 from app.core.config import init_db
+from sse_starlette.sse import EventSourceResponse
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -21,7 +24,6 @@ app = FastAPI(
 )
 allowed_origins = [
     "http://localhost:3000",  # Assuming your frontend runs on localhost:3000
-    "https://example.com",  # Replace with your actual domain
     "https://asktheshelf.up.railway.app",
     "http://localhost:6800",
     "https://asktheshelfscraper.up.railway.app",
@@ -31,7 +33,10 @@ allowed_origins = [
 
 @app.on_event("startup")
 async def app_startup():
-    await init_db()
+    try:
+        await init_db()
+    except Exception as e:
+        logger.error(f"An error occurred while connecting to database: {e}")
 
 
 @app.exception_handler(Exception)
@@ -41,6 +46,41 @@ async def exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"message": "An internal server error occurred"},
     )
+
+
+# async def event_generator(request: Request, user_id: str):
+#     pubsub = redis.pubsub()
+#     # Subscribe to the user-specific updates channel
+#     await pubsub.subscribe(f'user_updates:{user_id}')
+#     try:
+#         while True:
+#             if await request.is_disconnected():
+#                 break
+#             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+#             if message and message['type'] == 'message':
+#                 job_id = message['data'].decode()
+#                 job_status = await redis.hget(f"job:{job_id}", "status")
+#                 if job_status == "completed":
+#                     job_details = await redis.hget(f"job:{job_id}", "details")
+#                     yield f"data: {job_details}\n\n"
+#             else:
+#                 await asyncio.sleep(1)  # Sleep if no message to reduce CPU usage
+#     finally:
+#         await pubsub.unsubscribe(f'user_updates:{user_id}')
+#         await pubsub.close()
+#
+#
+# @app.get("/events/{user_id}")
+# async def events(request: Request, user_id: str):
+#     event_generator_instance = event_generator(request, user_id)
+#     return EventSourceResponse(event_generator_instance)
+#
+#
+# @app.get("/test")
+# async def test_redis():
+#     await redis.set('my-key', 'value')
+#     value = await redis.get('my-key')
+#     return {"value": value}
 
 
 app.include_router(router)
@@ -53,4 +93,4 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 app.add_middleware(AuthMiddleware, allow_routes=["/users", "/api/v1/docs", "/api/v1/openapi.json", "/robots.txt",
-                                                 "/api/v1/scrapy/update"])
+                                                 "/api/v1/scrapy/update", "/test"])

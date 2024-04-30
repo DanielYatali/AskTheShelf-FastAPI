@@ -18,7 +18,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             authorization: str = request.headers.get("Authorization")
             if not authorization:
-                return JSONResponse(content={"detail": "Authorization header is missing"}, status_code=401)
+                # check if the url contains 'stream' and pull the token from the query params
+                if 'stream' in request.url.path:
+                    authorization = 'Bearer ' + request.query_params.get('token')
+                    #add the token to the headers
+                    request.headers.__setattr__('Authorization', authorization)
+                else:
+                    return JSONResponse(content={"detail": "Authorization header is missing"}, status_code=401)
             try:
                 token_parts = authorization.split("Bearer ")
                 if len(token_parts) != 2:

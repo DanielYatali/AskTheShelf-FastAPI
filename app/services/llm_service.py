@@ -8,9 +8,11 @@ from openai import OpenAI
 from app.config.database import product_collection
 from app.core.config import settings
 from app.core.logger import logger
-from app.models.conversation_model import Conversation
+from app.models.conversation_model import Conversation, Message
 from app.schemas.llm_schema import ActionResponse
 from app.schemas.product_schema import ProductValidateSearch, ProductCard, product_identifier_serializer
+from app.services.conversation_service import ConversationService
+from app.services.job_service import JobService
 from app.services.product_service import ProductService
 
 GPT3 = "gpt-3.5-turbo"
@@ -325,10 +327,15 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in find_similar")
 
     @staticmethod
-    async def get_product_details(action_response: ActionResponse, model: str):
+    async def get_product_details(action_response: ActionResponse, model: str, user_id: str):
         try:
             if action_response.product_id and action_response.product_id != "":
                 product = await ProductService.get_product_by_id(action_response.product_id)
+                # A bit too complicated for now can be added in future features
+                # if not product:
+                #     url = f"https://www.amazon.com/dp/{action_response.product_id}"
+                #     await JobService.get_product_details(user_id=user_id, action=action_response, urls=[url])
+                #     return "Gathering product details, please wait..."
                 response = await LLMService.product_chat(product.dict(), action_response.user_query, model)
                 product_identifier = product_identifier_serializer(product.dict())
                 return {"related_products": [product_identifier], "message": response}
@@ -355,7 +362,7 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in get_product_details")
 
     @staticmethod
-    async def compare_products(action_response: ActionResponse, model: str):
+    async def compare_products(action_response: ActionResponse, model: str, user_id: str):
         try:
             if action_response.products and len(action_response.products) > 0:
                 if len(action_response.products) > 2:
@@ -371,6 +378,12 @@ class LLMService:
                 product2 = None
                 if product1Id != "":
                     product1 = await ProductService.get_product_by_id(product1Id)
+                    # A bit too complicated for now can be added in future features
+                    # if not product1:
+                    #     url1 = f"https://www.amazon.com/dp/{product1Id}"
+                    #     url2 = f"https://www.amazon.com/dp/{product2Id}"
+                    #     await JobService.get_product_details(user_id=user_id, action=action_response, urls=[url1, url2])
+                    #     return "Gathering product details, please wait..."
                     product1 = product1.dict()
                 else:
                     product1Name = action_response.products[0]["product_name"]
@@ -388,6 +401,12 @@ class LLMService:
 
                 if product2Id != "":
                     product2 = await ProductService.get_product_by_id(product2Id)
+                    # A bit too complicated for now can be added in future features
+                    # if not product2:
+                    #     url1 = f"https://www.amazon.com/dp/{product1Id}"
+                    #     url2 = f"https://www.amazon.com/dp/{product2Id}"
+                    #     await JobService.get_product_details(user_id=user_id, action=action_response, urls=[url1, url2])
+                    #     return "Gathering product details, please wait..."
                     product2 = product2.dict()
                 else:
                     product2Name = action_response.products[1]["product_name"]
@@ -428,15 +447,16 @@ class LLMService:
                         return actionResponse.response
                 case "get_product_details":
                     logger.info("In get_product_details case")
-                    return await LLMService.get_product_details(actionResponse, GPT3)
+                    return await LLMService.get_product_details(actionResponse, GPT3, conversation.user_id)
                 case "find_similar":
                     logger.info("In find_similar case")
                     return await LLMService.find_similar(actionResponse, GPT3)
                 case "compare_products":
                     logger.info("In compare_products case")
-                    return await LLMService.compare_products(actionResponse, GPT3)
+                    return await LLMService.compare_products(actionResponse, GPT3, conversation.user_id)
                 case "search":
                     logger.info("In search case")
+
                     if actionResponse.embedding_query and actionResponse.embedding_query != "":
                         embedding = await LLMService.create_embedding(actionResponse.embedding_query)
                         excludes = [
@@ -447,10 +467,16 @@ class LLMService:
                         ]
                         documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
                                                                                       excludes,
-                                                                                      actionResponse.embedding_query, 5, GPT3)
+                                                                                      actionResponse.embedding_query, 5,
+                                                                                      GPT3)
                         if len(documents) == 0:
-                            return ("No similar products found, we may not have that product in our database yet, "
-                                    "try using the link feature to add it")
+                            job = await JobService.search_amazon_products(actionResponse.embedding_query,
+                                                                          conversation.user_id,
+                                                                          query)
+                            if job:
+                                return ("No similar products found in our database, we are searching Amazon for you, "
+                                        "please wait...")
+                            return "No similar products found, we may not have that product in our database yet"
                         productCards = []
                         for product in documents:
                             productCards.append(ProductCard(**product))
@@ -458,4 +484,10 @@ class LLMService:
             return "I'm sorry, I don't understand that request"
         except Exception as e:
             logger.error("Error in get_action_from_llm", e)
+            assistant_message = Message(
+                role="assistant",
+                content="I'm sorry, I encountered an error while processing your request"
+            )
+            conversation.messages.append(assistant_message)
+            await ConversationService.update_conversation(conversation.user_id, conversation)
             raise HTTPException(status_code=500, detail="Error in get_action_from_llm")

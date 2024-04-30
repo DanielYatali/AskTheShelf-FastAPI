@@ -23,7 +23,7 @@ class ProductCard(BaseModel):
     image_url: str
     price: float
     rating: Optional[float] = 0.0
-    domain: str
+    domain: Optional[str] = ""
     stock: Optional[str] = ""
     affiliate_url: Optional[str] = ""
     discount_percentage: Optional[float] = 0.0
