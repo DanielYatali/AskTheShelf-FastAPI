@@ -2,7 +2,7 @@ from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseSettings
 from decouple import config
-from typing import List
+from typing import List, Dict
 from pydantic import AnyHttpUrl
 from app.core.logger import logger
 from app.models.job_model import Job
@@ -10,6 +10,7 @@ from app.models.product_model import Product
 from app.models.user_model import User
 from app.models.product_error_model import ProductError
 from app.models.conversation_model import Conversation
+from fastapi import WebSocket
 
 
 class Settings(BaseSettings):
@@ -55,3 +56,37 @@ async def init_db():
         ],
     )
     logger.info("Connected to MongoDB")
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+
+    def disconnect(self, user_id: str):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+
+    async def send_personal_message(self, message: str, user_id: str):
+        if user_id in self.active_connections:
+            websocket = self.active_connections[user_id]
+            await websocket.send_text(message)
+
+    async def send_personal_json(self, message: dict, user_id: str):
+        if user_id in self.active_connections:
+            websocket = self.active_connections[user_id]
+            await websocket.send_json(message)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections.values():
+            await connection.send_text(message)
+
+    async def broadcast_json(self, message: dict):
+        for connection in self.active_connections.values():
+            await connection.send_json(message)
+
+
+manager = ConnectionManager()

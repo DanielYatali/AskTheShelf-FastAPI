@@ -13,6 +13,15 @@ class Message(BaseModel):
     related_products: Optional[list] = []
 
 
+message_serializer = lambda message: {
+    "timestamp": message.timestamp,
+    "role": message.role,
+    "content": message.content,
+    "products": message.products,
+    "related_products": message.related_products,
+}
+
+
 class Conversation(Document):
     user_id: Indexed(str, unique=True)
     created_at: datetime = Field(default_factory=datetime.now)

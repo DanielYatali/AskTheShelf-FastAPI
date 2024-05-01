@@ -5,6 +5,7 @@ import httpx
 from fastapi import HTTPException
 from openai import OpenAI
 
+from app.core.config import manager
 from app.config.database import product_collection
 from app.core.config import settings
 from app.core.logger import logger
@@ -331,6 +332,9 @@ class LLMService:
         try:
             if action_response.product_id and action_response.product_id != "":
                 product = await ProductService.get_product_by_id(action_response.product_id)
+                if product is None:
+                    return ("Product details not found, if a search on amazon was previously initiated, we may still "
+                            "be gathering the details, please wait..., if issue persists, please try again later.")
                 # A bit too complicated for now can be added in future features
                 # if not product:
                 #     url = f"https://www.amazon.com/dp/{action_response.product_id}"
@@ -490,4 +494,5 @@ class LLMService:
             )
             conversation.messages.append(assistant_message)
             await ConversationService.update_conversation(conversation.user_id, conversation)
+            await manager.send_personal_json(assistant_message.json(), conversation.user_id)
             raise HTTPException(status_code=500, detail="Error in get_action_from_llm")

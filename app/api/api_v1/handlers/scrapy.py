@@ -5,6 +5,8 @@ from datetime import datetime
 import requests
 from fastapi import APIRouter, HTTPException, status, Request, BackgroundTasks
 
+from app.api.api_v1.handlers import conversation
+from app.core.config import manager
 from app.schemas.llm_schema import ActionResponse
 from app.utils.utils import make_affiliate_link, make_affiliate_link_from_asin
 from app.models.conversation_model import Message
@@ -108,6 +110,7 @@ async def handle_compare_products(updated_job):
         )
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(user_conversation.user_id, user_conversation)
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
         await JobService.delete_job(job_id)
     except Exception as e:
         logger.error("Error in handle_compare_products: ", e)
@@ -118,6 +121,7 @@ async def handle_compare_products(updated_job):
         )
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(user_conversation.user_id, user_conversation)
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
 
 
 async def handle_search_products(updated_job):
@@ -142,6 +146,7 @@ async def handle_search_products(updated_job):
         assistant_message = Message(role="assistant", content=message_content, products=new_product_cards)
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(updated_job.user_id, user_conversation)
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
 
         if new_product_cards:
             urls = ["https://www.amazon.com/dp/" + card.product_id for card in new_product_cards]
@@ -156,6 +161,7 @@ async def handle_search_products(updated_job):
         assistant_message = Message(role="assistant", content="Error processing search results, please try again.")
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(updated_job.user_id, user_conversation)
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
     # try:
     #     job_id = updated_job.job_id
     #     products = updated_job.result
@@ -382,50 +388,62 @@ async def handle_get_product_details(updated_job):
 
 
 async def handle_links(updated_job):
-    product_data = updated_job.result[0]
-    job_id = updated_job.job_id
-    if not product_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No product data found in job")
-    product_id = product_data["product_id"]
-    affiliate_url = make_affiliate_link(updated_job.url)
-    product_data["affiliate_url"] = affiliate_url
-    existing_product = await ProductService.get_product_by_id(product_id)
-    if existing_product:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")
-    new_product = Product(**product_data)
-    new_product.user_id = updated_job.user_id
-    user_conversation = await ConversationService.get_conversation_by_user_id(new_product.user_id)
-    productOut = ProductCard(**new_product.dict())
-    assistant_message = Message(
-        role="assistant",
-        content="Here is the product you requested",
-        products=[productOut],
-    )
-    user_conversation.messages.append(assistant_message)
-    await ConversationService.update_conversation(new_product.user_id, user_conversation)
-    new_product = await ProductService.create_product(new_product)
-    errors = await ProductService.validate_product(new_product)
-    if len(errors) > 0:
-        new_product_error = ProductError(
-            product_id=product_id,
-            job_id=job_id,
-            user_id=updated_job.user_id,
-            error=errors,
+    try:
+        product_data = updated_job.result[0]
+        job_id = updated_job.job_id
+        if not product_data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No product data found in job")
+        product_id = product_data["product_id"]
+        affiliate_url = make_affiliate_link(updated_job.url)
+        product_data["affiliate_url"] = affiliate_url
+        existing_product = await ProductService.get_product_by_id(product_id)
+        if existing_product:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")
+        new_product = Product(**product_data)
+        new_product.user_id = updated_job.user_id
+        user_conversation = await ConversationService.get_conversation_by_user_id(new_product.user_id)
+        productOut = ProductCard(**new_product.dict())
+        assistant_message = Message(
+            role="assistant",
+            content="Here is the product you requested",
+            products=[productOut],
         )
-        await ProductErrorService.create_product_error(new_product_error)
+        user_conversation.messages.append(assistant_message)
+        await ConversationService.update_conversation(new_product.user_id, user_conversation)
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
+        new_product = await ProductService.create_product(new_product)
+        errors = await ProductService.validate_product(new_product)
+        if len(errors) > 0:
+            new_product_error = ProductError(
+                product_id=product_id,
+                job_id=job_id,
+                user_id=updated_job.user_id,
+                error=errors,
+            )
+            await ProductErrorService.create_product_error(new_product_error)
 
-    # generated_review, embedding_text = await asyncio.gather(
-    #     LLMService.generate_product_review(product_data),
-    #     LLMService.generate_embedding_text(product_data)
-    # )
-    embedding_text = await LLMService.generate_embedding_text(product_data)
-    embedding = await LLMService.create_embedding(embedding_text)
-    # new_product.generated_review = generated_review
-    new_product.embedding = embedding
-    new_product.embedding_text = embedding_text
-    new_product.updated_at = datetime.now()
-    await ProductService.update_product(product_id, new_product)
-    await JobService.delete_job(job_id)
+        # generated_review, embedding_text = await asyncio.gather(
+        #     LLMService.generate_product_review(product_data),
+        #     LLMService.generate_embedding_text(product_data)
+        # )
+        embedding_text = await LLMService.generate_embedding_text(product_data)
+        embedding = await LLMService.create_embedding(embedding_text)
+        # new_product.generated_review = generated_review
+        new_product.embedding = embedding
+        new_product.embedding_text = embedding_text
+        new_product.updated_at = datetime.now()
+        await ProductService.update_product(product_id, new_product)
+        await JobService.delete_job(job_id)
+    except Exception as e:
+        logger.error("Error in handle_links: ", e)
+        user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
+        assistant_message = Message(
+            role="assistant",
+            content="Error processing product details, please try again.",
+        )
+        user_conversation.messages.append(assistant_message)
+        await ConversationService.update_conversation(updated_job.user_id, user_conversation)
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
 
 
 @scrapy_router.get("/update")
