@@ -1,27 +1,39 @@
 import json
+from typing import List, Optional
 
 import aiofiles
 import httpx
 from fastapi import HTTPException
+from groq import Groq
 from openai import OpenAI
 
-from app.config.database import product_collection
+from app.core.config import manager
 from app.core.config import settings
 from app.core.logger import logger
 from app.models.conversation_model import Conversation, Message
+from app.models.product_model import Product
 from app.schemas.llm_schema import ActionResponse
 from app.schemas.product_schema import ProductValidateSearch, ProductCard, product_identifier_serializer
 from app.services.conversation_service import ConversationService
 from app.services.job_service import JobService
 from app.services.product_service import ProductService
+import google.generativeai as genai
 
 GPT3 = "gpt-3.5-turbo"
+OPEN_AI_EMBEDDING = "text-embedding-ada-002"
+GEMINI = "gemini-pro"
+# Tried llama it did a terrible job with json
+Llama = "Llama3-8b-8192"
+GEMINI_EMBEDDING = "text-embedding-004"
 
 
 class LLMService:
     @staticmethod
-    async def find_similar_embeddings(collection, embedding, excludes, query, limit=1, model=None):
+    async def find_similar_embeddings(collection, embedding: List[float], excludes: List[str], query: str,
+                                      limit: int = 1, model: Optional[str] = None
+                                      ):
         try:
+            # Build the pipeline for vector search
             pipeline = [
                 {
                     "$vectorSearch": {
@@ -32,34 +44,46 @@ class LLMService:
                         "index": "vector_index",
                     }
                 },
-                {"$project": {"score": {"$meta": "vectorSearchScore"},
-                              **{field: 0 for field in excludes}}},
+                {
+                    "$project": {
+                        "score": {"$meta": "vectorSearchScore"},
+                        **{field: 0 for field in excludes}
+                    }
+                }
             ]
 
-            documents = collection.aggregate(pipeline)
-            # if documents is not none we will make a call the llm to validate the product to see if it matches the query
-            if documents is not None:
-                products = []
-                oldDocuments = []
-                for doc in documents:
-                    products.append(ProductValidateSearch(**doc))
-                    oldDocuments.append(doc)
-                if len(products) > 0:
+            # Run the aggregation
+            documents_cursor = collection.aggregate(pipeline)
+            products = []
+            old_documents = []
+
+            async for doc in documents_cursor:
+                product = ProductValidateSearch(**doc)
+                products.append(product)
+                old_documents.append(doc)
+
+            # If products were found, validate them using LLM
+            if products:
+                try:
                     response = await LLMService.validate_embedding_search(products, query, model)
-                    response = json.loads(response)
-                    products = response["products"]
-                    filteredProducts = []
-                    for product_id in products:
-                        for product in oldDocuments:
-                            if product['product_id'] == product_id:
-                                filteredProducts.append(product)
-                    message = ""
-                    if response["message"]:
-                        message = response["message"]
-                    return filteredProducts, message
-            return []
+                    response_data = json.loads(response)
+                    validated_products_ids = response_data.get("products", [])
+                    message = response_data.get("message", "")
+                except Exception as e:
+                    logger.error("Error validating embeddings with LLM " + str(e))
+                    raise HTTPException(status_code=500, detail="Error validating embeddings with LLM")
+
+                # Filter the products based on the validated IDs
+                filtered_products = [
+                    doc for doc in old_documents
+                    if doc['product_id'] in validated_products_ids
+                ]
+                return filtered_products, message
+
+            return [], ""
+
         except Exception as e:
-            logger.error("Error in find_similar_embeddings", e)
+            logger.error("Error in find_similar_embeddings " + str(e), exc_info=True)
             raise HTTPException(status_code=500, detail="Error in find_similar_embeddings")
 
     @staticmethod
@@ -79,7 +103,7 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in validate_embedding_search")
 
     @staticmethod
-    async def create_embedding(query, model=None):
+    async def create_open_ai_embedding(query, model=None):
         try:
             url = 'https://api.openai.com/v1/embeddings'
             openai_key = settings.OPENAI_API_KEY
@@ -98,6 +122,20 @@ class LLMService:
                 response_data = response.json()
                 embedding = response_data['data'][0]['embedding']
                 return embedding
+        except Exception as e:
+            logger.error("Error in create_embedding", e)
+            raise HTTPException(status_code=500, detail="Error in create_embedding")
+
+    @staticmethod
+    async def create_embedding(query, model=None):
+        try:
+            # if model is None:
+            #     model = OPEN_AI_EMBEDDING
+            # if model == OPEN_AI_EMBEDDING:
+            return await LLMService.create_open_ai_embedding(query, model)
+            # elif model == GEMINI_EMBEDDING:
+            #     return await LLMService.create_gemini_embedding(query, model)
+
         except Exception as e:
             logger.error("Error in create_embedding", e)
             raise HTTPException(status_code=500, detail="Error in create_embedding")
@@ -139,27 +177,22 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in generate_product_review")
 
     @staticmethod
-    async def generate_embedding_text(product):
+    async def generate_embedding_text(product, model):
         try:
             # Read the prompt asynchronously
             async with aiofiles.open('prompts/embedding_text_prompt.txt', mode='r') as file:
                 prompt = await file.read()
 
             # Configure your OpenAI client properly here
-            client = OpenAI()
             product.pop("embedding", None)
             product.pop("reviews", None)
-
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user",
-                     "content": f"{product}"}
-                ]
-            )
-            message = completion.choices[0].message.model_dump()
-            return message["content"]
+            product.pop("similar_products", None)
+            messages = [
+                {"role": "system", "content": prompt},
+                {"role": "user",
+                 "content": f"{product}"}
+            ]
+            return await LLMService.llm_request(messages, model)
         except Exception as e:
             logger.error("Error in generate_embedding_text", e)
             raise HTTPException(status_code=500, detail="Error in generate_embedding_text")
@@ -198,7 +231,7 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in make_llm_request")
 
     @staticmethod
-    async def make_openai_request(conversation, model):
+    async def make_openai_request(conversation, model=GPT3):
         try:
             client = OpenAI()
             completion = client.chat.completions.create(
@@ -212,11 +245,55 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in make_openai_request")
 
     @staticmethod
-    async def llm_request(conversation, name):
+    async def make_gemini_request(conversation, model=GEMINI):
         try:
-            if name == GPT3:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel(model)
+            response = await model.generate_content_async(json.dumps(conversation))
+            return response.text
+        except Exception as e:
+            logger.error("Error in make_gemini_request", e)
+            raise HTTPException(status_code=500, detail="Error in make_gemini_request")
+
+    @staticmethod
+    async def make_groq_request(conversation, model=Llama):
+        try:
+            client = Groq(
+                api_key=settings.GROQ_API_KEY,
+            )
+            chat_completion = client.chat.completions.create(
+                messages=conversation,
+                model=model
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            logger.error("Error in make_groq_request", e)
+            raise HTTPException(status_code=500, detail="Error in make_groq_request")
+
+    @staticmethod
+    async def create_gemini_embedding(query, model=GEMINI_EMBEDDING):
+        try:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            result = genai.embed_content(
+                model="models/" + model,
+                content=query,
+                task_type="retrieval_document",
+                title="Embedding of list of strings")
+            return result.get("embedding", [])
+        except Exception as e:
+            logger.error("Error in create_gemini_embedding", e)
+            raise HTTPException(status_code=500, detail="Error in create_gemini_embedding")
+
+    @staticmethod
+    async def llm_request(conversation, model=GPT3):
+        try:
+            if model == GPT3:
                 return await LLMService.make_openai_request(conversation, GPT3)
-            return await LLMService.make_llm_request(conversation)
+            elif model == GEMINI:
+                return await LLMService.make_gemini_request(conversation, GEMINI)
+            elif model == Llama:
+                return await LLMService.make_groq_request(conversation, Llama)
+            return await LLMService.make_openai_request(conversation, GPT3)
         except Exception as e:
             logger.error("Error in llm_request", e)
             raise HTTPException(status_code=500, detail="Error in llm_request")
@@ -242,7 +319,7 @@ class LLMService:
             raise HTTPException(status_code=500, detail="Error in compare")
 
     @staticmethod
-    async def manager(query, conversation: Conversation):
+    async def manager(query, conversation: Conversation, model):
         try:
             async with aiofiles.open('prompts/manager.txt', mode='r') as file:
                 prompt = await file.read()
@@ -257,13 +334,13 @@ class LLMService:
                 *context,
                 {"role": "user", "content": query}
             ]
-            response = await LLMService.llm_request(messages, GPT3)
+            response = await LLMService.llm_request(messages, model)
             logger.info("Response from LLM:" + response)
             if "action" not in response:
                 logger.info("LLM did not return an action, trying again")
                 messages.append({"role": "system", "content": response})
                 messages.append({"role": "user", "content": "You did not return an action, please try again"})
-                response = await LLMService.llm_request(messages, GPT3)
+                response = await LLMService.llm_request(messages, model)
                 logger.info("Corrected response from LLM:" + response)
             if "action" in response:
                 try:
@@ -273,7 +350,7 @@ class LLMService:
                     logger.info("Invalid JSON response from LLM", e)
                     messages.append({"role": "system", "content": response})
                     messages.append({"role": "user", "content": "Invalid JSON response please try again"})
-                    response = await LLMService.llm_request(messages, GPT3)
+                    response = await LLMService.llm_request(messages, model)
                     logger.info("Corrected response from LLM:" + response)
             response = json.loads(response)
             return response
@@ -293,9 +370,14 @@ class LLMService:
                     "embedding",
                     "qa"
                 ]
-                documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
+                documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
                                                                               excludes,
                                                                               action_response.embedding_query, 5, model)
+                # documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(),
+                #                                                               embedding,
+                #                                                               excludes,
+                #                                                               actionResponse.embedding_query, 5,
+                #                                                               model)
                 if len(documents) == 0:
                     return ("No similar products found, we may not have that product in our database yet, "
                             "try using the link feature to add it")
@@ -311,7 +393,7 @@ class LLMService:
                     "embedding",
                     "qa"
                 ]
-                documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
+                documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
                                                                               excludes,
                                                                               action_response.embedding_query, 5, model)
                 if len(documents) == 0:
@@ -331,6 +413,9 @@ class LLMService:
         try:
             if action_response.product_id and action_response.product_id != "":
                 product = await ProductService.get_product_by_id(action_response.product_id)
+                if product is None:
+                    return ("Product details not found, if a search on amazon was previously initiated, we may still "
+                            "be gathering the details, please wait..., if issue persists, please try again later.")
                 # A bit too complicated for now can be added in future features
                 # if not product:
                 #     url = f"https://www.amazon.com/dp/{action_response.product_id}"
@@ -347,7 +432,7 @@ class LLMService:
                     "embedding",
                     "qa"
                 ]
-                documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
+                documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
                                                                               excludes,
                                                                               action_response.embedding_query, 1)
                 if len(documents) == 0:
@@ -390,7 +475,7 @@ class LLMService:
                     if product1Name != "":
                         product1_embedding = await LLMService.create_embedding(product1Name)
                         product1_documents, message = await LLMService.find_similar_embeddings(
-                            product_collection,
+                            Product.get_motor_collection(),
                             product1_embedding,
                             excludes, action_response.embedding_query, 1, model)
                         if len(product1_documents) == 0:
@@ -412,11 +497,12 @@ class LLMService:
                     product2Name = action_response.products[1]["product_name"]
                     product2_embedding = await LLMService.create_embedding(product2Name)
 
-                    product2_documents, message = await LLMService.find_similar_embeddings(product_collection,
-                                                                                           product2_embedding,
-                                                                                           excludes,
-                                                                                           action_response.embedding_query,
-                                                                                           1, model)
+                    product2_documents, message = await LLMService.find_similar_embeddings(
+                        Product.get_motor_collection(),
+                        product2_embedding,
+                        excludes,
+                        action_response.embedding_query,
+                        1, model)
                     if len(product2_documents) == 0:
                         return ("No similar product found, we may not have that product in our database yet, "
                                 "try using the link feature to add it")
@@ -429,10 +515,11 @@ class LLMService:
             logger.error("Error in compare_products", e)
             raise HTTPException(status_code=500, detail="Error in compare_products")
 
+    # TODO: Refactor this to return a Message object
     @staticmethod
-    async def get_action_from_llm(query, conversation: Conversation):
+    async def get_action_from_llm(query, conversation: Conversation, model):
         try:
-            response = await LLMService.manager(query, conversation)
+            response = await LLMService.manager(query, conversation, model)
             if "action" not in response:
                 return response
             actionResponse = ActionResponse(**response)
@@ -447,13 +534,13 @@ class LLMService:
                         return actionResponse.response
                 case "get_product_details":
                     logger.info("In get_product_details case")
-                    return await LLMService.get_product_details(actionResponse, GPT3, conversation.user_id)
+                    return await LLMService.get_product_details(actionResponse, model, conversation.user_id)
                 case "find_similar":
                     logger.info("In find_similar case")
-                    return await LLMService.find_similar(actionResponse, GPT3)
+                    return await LLMService.find_similar(actionResponse, model)
                 case "compare_products":
                     logger.info("In compare_products case")
-                    return await LLMService.compare_products(actionResponse, GPT3, conversation.user_id)
+                    return await LLMService.compare_products(actionResponse, model, conversation.user_id)
                 case "search":
                     logger.info("In search case")
 
@@ -465,10 +552,11 @@ class LLMService:
                             "embedding",
                             "qa"
                         ]
-                        documents, message = await LLMService.find_similar_embeddings(product_collection, embedding,
+                        documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(),
+                                                                                      embedding,
                                                                                       excludes,
                                                                                       actionResponse.embedding_query, 5,
-                                                                                      GPT3)
+                                                                                      model)
                         if len(documents) == 0:
                             job = await JobService.search_amazon_products(actionResponse.embedding_query,
                                                                           conversation.user_id,
@@ -490,4 +578,5 @@ class LLMService:
             )
             conversation.messages.append(assistant_message)
             await ConversationService.update_conversation(conversation.user_id, conversation)
+            await manager.send_personal_json(assistant_message.json(), conversation.user_id)
             raise HTTPException(status_code=500, detail="Error in get_action_from_llm")

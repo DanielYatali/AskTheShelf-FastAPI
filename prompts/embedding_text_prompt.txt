@@ -7,8 +7,6 @@ Title: State the product's full name for clear identification and context.
 Category: Specify the product's category to assist in categorization and relevance in search algorithms.
 Price: Clearly indicate the product's current price
 Key Facts: Highlight the essential features and specifications that define the product.
-Description Summary: Provide a succinct overview of the product's primary advantages and features, emphasizing aspects like performance, compatibility, user experience, and any distinguishing features.
-Detailed Specifications: List the product's technical specifications comprehensively, including dimensions, weight, operating system, storage capacity, connectivity options, display details, and any other pertinent attributes that influence customer decisions within this category.
 
 The summary must be factual, concise, and structured to support search algorithms and comparison tools effectively, focusing on relevant and substantial product details.
 Objective: The goal is to craft a precise and informative product summary that enhances embedding search functionalities, enabling efficient product comparison

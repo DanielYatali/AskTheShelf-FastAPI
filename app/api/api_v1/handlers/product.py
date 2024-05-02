@@ -12,7 +12,6 @@ from app.services.product_service import ProductService, ProductErrorService
 from app.schemas.product_schema import ProductOut, ProductForUser
 from app.services.llm_service import LLMService
 from app.core.logger import logger
-from app.config.database import product_collection
 
 product_router = APIRouter(dependencies=[Depends(HTTPBearer())])
 
@@ -76,13 +75,13 @@ async def search_similar_products(request: Request, body: dict):
             "reviews",
             "qa"
         ]
-        documents, message = await LLMService.find_similar_embeddings(product_collection, embedding, excludes, query, 5)
+        documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding, excludes, query, 5)
         return documents
     except Exception as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error searching for similar products")
 
-
+# deprecated use socket connection instead
 @product_router.post("/{product_id}/chat")
 async def chat_with_product(request: Request, product_id: str, body: dict):
     try:
@@ -135,6 +134,7 @@ async def delete_product(request: Request, product_id: str):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product not found")
 
 
+# deprecated use socket connection instead
 @product_router.post("/chat", summary="Chat with LLM")
 async def chat_with_llm(request: Request, body: dict):
     try:

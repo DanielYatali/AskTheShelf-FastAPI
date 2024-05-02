@@ -18,11 +18,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             authorization: str = request.headers.get("Authorization")
             if not authorization:
-                # check if the url contains 'stream' and pull the token from the query params
-                if 'stream' in request.url.path:
-                    authorization = 'Bearer ' + request.query_params.get('token')
-                    #add the token to the headers
-                    request.headers.__setattr__('Authorization', authorization)
+                if 'ws' in request.url.path or 'wss' in request.url.path:
+                    # Try to extract token from query parameters
+                    # Little hack, remove once web sockets are working
+                    token = request.query_params.get('token')
+                    if not token:
+                        return JSONResponse(content={"detail": "Authorization token is missing"}, status_code=401)
+                    authorization = f'Bearer {token}'
                 else:
                     return JSONResponse(content={"detail": "Authorization header is missing"}, status_code=401)
             try:
