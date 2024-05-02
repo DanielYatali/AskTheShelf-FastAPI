@@ -294,13 +294,11 @@ class LLMService:
             {"role": "user", "content": query}
         ]
         response = await LLMService.llm_request(messages, model)
-        logger.info("Response from LLM:" + response)
         if "action" not in response:
             logger.info("LLM did not return an action, trying again")
             messages.append({"role": "system", "content": response})
             messages.append({"role": "user", "content": "You did not return an action, please try again"})
             response = await LLMService.llm_request(messages, model)
-            logger.info("Corrected response from LLM:" + response)
         if "action" in response:
             response = parse_json(response)
             if not response:
