@@ -215,7 +215,8 @@ class JobService:
             async with aiohttp.ClientSession() as session:
                 async with session.post(scraper_url, data=data) as response:
                     if response.status != 200:
-                        logger.error("Failed to post job to scraper")
+                        logger.error("Failed to post job to scraper", response.status)
+                        logger.error(response.text)
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                             detail="Failed to post job to scraper")
             assistant_message = Message(
@@ -227,7 +228,7 @@ class JobService:
             return assistant_message
 
         except Exception as e:
-            logger.error("Unable to create job", e)
+            logger.error("Unable to create job", str(e))
             assistant_message = Message(
                 role="assistant",
                 content="Failed to get product details, please try again",
