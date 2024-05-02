@@ -1,14 +1,5 @@
-import asyncio
-import json
-from typing import Dict
-
-from beanie import PydanticObjectId
-from bson import ObjectId
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
-from fastapi.responses import StreamingResponse
-
-from app.core.logger import logger
 from app.models.conversation_model import Conversation
 
 from app.services.conversation_service import ConversationService

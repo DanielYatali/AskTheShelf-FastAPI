@@ -1,28 +1,17 @@
-import asyncio
-import json
-from typing import Dict
-
 from fastapi import FastAPI, Depends, HTTPException, status, Security, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
-
 from app.api.deps.user_deps import get_current_user
 from app.core.config import settings, manager
-from beanie import init_beanie
-from motor.motor_asyncio import AsyncIOMotorClient
-
 from app.core.security import auth
 from app.models.conversation_model import Message, Conversation
-from app.models.user_model import User
-from app.models.job_model import Job
-from app.models.product_model import Product
 from app.api.api_v1.router import router
 from app.core.logger import logger
 from app.core.middlewares import AuthMiddleware
 from app.core.config import init_db
-
 from app.services.conversation_service import ConversationService
-from app.services.llm_service import LLMService
+from app.services.job_service import JobService
+from app.services.llm_service import LLMService, GPT3
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -39,10 +28,8 @@ allowed_origins = [
 ]
 
 
-
-
-
-async def chat_with_llm(query, user_id):
+# TODO: Refactor this to not have if else statements
+async def chat_with_llm(query, user_id, model):
     try:
         if not query:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Query not provided")
@@ -54,7 +41,7 @@ async def chat_with_llm(query, user_id):
             role="user",
             content=query,
         )
-        response = await LLMService.get_action_from_llm(query, user_conversation)
+        response = await LLMService.get_action_from_llm(query, user_conversation, model)
         user_conversation.messages.append(user_message)
         if isinstance(response, dict):
             if 'products' in response:
@@ -105,35 +92,29 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 if user.user_id != user_id:
                     await websocket.close(code=1008)
                     return
-                print(f"User {user_id} connected")
+                logger.info(f"User {user_id} connected")
                 continue
             elif data.get("type") == "message":
                 message = data.get("message")
-                response = await chat_with_llm(message, user_id)
+                model = data.get("model")
+                response = await chat_with_llm(message, user_id, model)
+                await manager.send_personal_json(response.json(), user_id)
+            elif data.get("type") == "link":
+                url = data.get("url")
+                response = await JobService.get_comprehensive_product_details(user_id, url)
                 await manager.send_personal_json(response.json(), user_id)
             else:
-                await websocket.send_json({"error": "Invalid message type"})
-
-
-            # Process each message received
-            # test_message = Message(
-            #     role="user",
-            #     content="test message",
-            # )
-            # await manager.send_personal_json(test_message.json(), user_id)
-            # Example of broadcasting a received message
-            # await manager.broadcast(f"User {user_id}: {data}")
+                assistant_message = Message(
+                    role="assistant",
+                    content="Invalid message type",
+                )
+                await manager.send_personal_json(assistant_message.json(), user_id)
     except WebSocketDisconnect:
         manager.disconnect(user_id)  # Clean up on disconnect
         print(f"User {user_id} disconnected")
     except Exception as e:
         print(f"Error with WebSocket for user {user_id}: {e}")
-        await websocket.close(code=1011)  # Internal server error code
-
-
-async def process_message(message, websocket):
-    # Handle messages here, e.g., parsing and responding back to the same user
-    await websocket.send_text(f"Echo: {message}")
+        # await websocket.close(code=1011)  # Internal server error code
 
 
 @app.on_event("startup")
@@ -144,6 +125,7 @@ async def app_startup():
         logger.error(f"An error occurred while connecting to database: {e}")
 
 
+# Not sure if this is working
 @app.exception_handler(Exception)
 async def exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled exception: {exc}")
@@ -151,41 +133,6 @@ async def exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"message": "An internal server error occurred"},
     )
-
-
-# async def event_generator(request: Request, user_id: str):
-#     pubsub = redis.pubsub()
-#     # Subscribe to the user-specific updates channel
-#     await pubsub.subscribe(f'user_updates:{user_id}')
-#     try:
-#         while True:
-#             if await request.is_disconnected():
-#                 break
-#             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-#             if message and message['type'] == 'message':
-#                 job_id = message['data'].decode()
-#                 job_status = await redis.hget(f"job:{job_id}", "status")
-#                 if job_status == "completed":
-#                     job_details = await redis.hget(f"job:{job_id}", "details")
-#                     yield f"data: {job_details}\n\n"
-#             else:
-#                 await asyncio.sleep(1)  # Sleep if no message to reduce CPU usage
-#     finally:
-#         await pubsub.unsubscribe(f'user_updates:{user_id}')
-#         await pubsub.close()
-#
-#
-# @app.get("/events/{user_id}")
-# async def events(request: Request, user_id: str):
-#     event_generator_instance = event_generator(request, user_id)
-#     return EventSourceResponse(event_generator_instance)
-#
-#
-# @app.get("/test")
-# async def test_redis():
-#     await redis.set('my-key', 'value')
-#     value = await redis.get('my-key')
-#     return {"value": value}
 
 
 app.include_router(router)

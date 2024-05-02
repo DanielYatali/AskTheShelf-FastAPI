@@ -1,11 +1,7 @@
 import asyncio
 import json
 from datetime import datetime
-
-import requests
 from fastapi import APIRouter, HTTPException, status, Request, BackgroundTasks
-
-from app.api.api_v1.handlers import conversation
 from app.core.config import manager
 from app.schemas.llm_schema import ActionResponse
 from app.utils.utils import make_affiliate_link, make_affiliate_link_from_asin
@@ -17,12 +13,13 @@ from app.schemas.product_schema import ProductOut, ProductCard, ProductValidateS
 from app.services.conversation_service import ConversationService
 from app.services.job_service import JobService
 from app.services.product_service import ProductService, ProductErrorService
-from app.services.llm_service import LLMService, GPT3
+from app.services.llm_service import LLMService, GPT3, GEMINI_EMBEDDING, OPEN_AI_EMBEDDING, GEMINI
 from app.core.logger import logger
 
 scrapy_router = APIRouter()
 
 
+# the webscraper will send a POST request to this endpoint once it has finished its job
 @scrapy_router.post("/update", summary="Update job")
 async def update_job(request: Request, job: dict, background_tasks: BackgroundTasks):
     try:
@@ -46,8 +43,8 @@ async def update_job(request: Request, job: dict, background_tasks: BackgroundTa
         match updated_job.action:
             case "link":
                 background_tasks.add_task(handle_links, updated_job)
-            case "get_product_details":
-                background_tasks.add_task(handle_get_product_details, updated_job)
+            # case "get_product_details":
+            #     background_tasks.add_task(handle_get_product_details, updated_job)
             case "search":
                 background_tasks.add_task(handle_search_products, updated_job)
             case "basic_get_product_details":
@@ -153,6 +150,8 @@ async def handle_search_products(updated_job):
             action = ActionResponse(action="basic_get_product_details", user_query=updated_job.user_query)
             await JobService.basic_get_products(updated_job.user_id, action, urls)
 
+        assistant_message = Message(role="assistant", content="We will fetch products details in the background for you. This may take a few seconds.")
+        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
         await JobService.delete_job(updated_job.job_id)
 
     except Exception as e:
@@ -231,8 +230,22 @@ async def handle_get_basic_product_details(updated_job):
         if not updated_job.result:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No product data found in job")
 
-        product_data_tasks = [process_product_data(product_data, updated_job) for product_data in updated_job.result if
-                              product_data]
+        product_data_tasks = []
+        use_gemini = True
+
+        for product_data in updated_job.result:
+            if product_data:
+                # Split up the tasks between the two models
+                # OpenAI seems to timeout on multiple requests
+                embedding_model = GEMINI_EMBEDDING if use_gemini else OPEN_AI_EMBEDDING
+                model = GEMINI if use_gemini else GPT3
+                task = process_product_data(product_data, updated_job, embedding_model=embedding_model, llm_model=model)
+                product_data_tasks.append(task)
+                use_gemini = not use_gemini
+        # Process the tasks in batches of 2
+        # This is to prevent timeouts
+        # TODO right now is this is the longest operation in the codebase
+        # Look into ways to speed this up
         await process_in_batches(product_data_tasks, 2)
 
         await JobService.delete_job(updated_job.job_id)
@@ -248,30 +261,36 @@ async def process_in_batches(tasks, batch_size):
         await asyncio.gather(*batch)
 
 
-async def process_product_data(product_data, updated_job):
-    product_id = product_data.get("product_id")
-    affiliate_url = make_affiliate_link(updated_job.url)
-    product_data["affiliate_url"] = affiliate_url
+async def process_product_data(product_data, updated_job, embedding_model=OPEN_AI_EMBEDDING, llm_model=GPT3):
+    try:
+        product_id = product_data.get("product_id")
+        affiliate_url = make_affiliate_link(updated_job.url)
+        product_data["affiliate_url"] = affiliate_url
 
-    existing_product = await ProductService.get_product_by_id(product_id)
-    if existing_product:
-        return
+        existing_product = await ProductService.get_product_by_id(product_id)
+        if existing_product:
+            return
 
-    new_product = Product(**product_data, user_id=updated_job.user_id)
-    new_product = await ProductService.create_product(new_product)
-    errors = await ProductService.validate_product(new_product)
+        new_product = Product(**product_data, user_id=updated_job.user_id)
+        new_product = await ProductService.create_product(new_product)
+        errors = await ProductService.validate_product(new_product)
 
-    if errors:
-        await handle_product_errors(product_id, updated_job.job_id, updated_job.user_id, errors)
+        if errors:
+            await handle_product_errors(product_id, updated_job.job_id, updated_job.user_id, errors)
 
-    embedding_text = await LLMService.generate_embedding_text(product_data)
-    embedding = await LLMService.create_embedding(embedding_text)
+        embedding_text = await LLMService.generate_embedding_text(product_data, llm_model)
+        #Needs to be OpenAI for now because the dimensions are already indexed with 1536 dimensions
+        embedding = await LLMService.create_embedding(embedding_text, OPEN_AI_EMBEDDING)
 
-    new_product.embedding = embedding
-    new_product.embedding_text = embedding_text
-    new_product.updated_at = datetime.now()
+        new_product.embedding = embedding
+        new_product.embedding_text = embedding_text
+        new_product.updated_at = datetime.now()
 
-    await ProductService.update_product(product_id, new_product)
+        await ProductService.update_product(product_id, new_product)
+    except Exception as e:
+        title = product_data.get("title")
+        logger.error(f"Error in process_product_data: {e}")
+        await handle_error_in_conversation(updated_job, message=f"Error processing product details for {title}, please try again.")
 
 
 async def handle_product_errors(product_id, job_id, user_id, errors):
@@ -284,51 +303,7 @@ async def handle_error_in_conversation(updated_job, message="Error processing pr
     assistant_message = Message(role="assistant", content=message)
     user_conversation.messages.append(assistant_message)
     await ConversationService.update_conversation(updated_job.user_id, user_conversation)
-
-
-# async def handle_get_basic_product_details(updated_job):
-#     try:
-#         products_data = updated_job.result
-#         job_id = updated_job.job_id
-#         products_ids = []
-#         for product_data in products_data:
-#             if not product_data:
-#                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No product data found in job")
-#             product_id = product_data["product_id"]
-#             products_ids.append({"product_id": product_id})
-#             affiliate_url = make_affiliate_link(updated_job.url)
-#             product_data["affiliate_url"] = affiliate_url
-#             existing_product = await ProductService.get_product_by_id(product_id)
-#             if existing_product:
-#                 continue
-#             new_product = Product(**product_data)
-#             new_product.user_id = updated_job.user_id
-#             new_product = await ProductService.create_product(new_product)
-#             errors = await ProductService.validate_product(new_product)
-#             if len(errors) > 0:
-#                 new_product_error = ProductError(
-#                     product_id=product_id,
-#                     job_id=job_id,
-#                     user_id=updated_job.user_id,
-#                     error=errors,
-#                 )
-#                 await ProductErrorService.create_product_error(new_product_error)
-#             embedding_text = await LLMService.generate_embedding_text(product_data)
-#             embedding = await LLMService.create_embedding(embedding_text)
-#             new_product.embedding = embedding
-#             new_product.embedding_text = embedding_text
-#             new_product.updated_at = datetime.now()
-#             await ProductService.update_product(product_id, new_product)
-#         await JobService.delete_job(job_id)
-#     except Exception as e:
-#         logger.error("Error in handle_get_basic_product_details: ", e)
-#         user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
-#         assistant_message = Message(
-#             role="assistant",
-#             content="Error fetching product details, please try again.",
-#         )
-#         user_conversation.messages.append(assistant_message)
-#         await ConversationService.update_conversation(user_conversation.user_id, user_conversation)
+    await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
 
 
 async def handle_get_product_details(updated_job):
@@ -426,8 +401,8 @@ async def handle_links(updated_job):
         #     LLMService.generate_product_review(product_data),
         #     LLMService.generate_embedding_text(product_data)
         # )
-        embedding_text = await LLMService.generate_embedding_text(product_data)
-        embedding = await LLMService.create_embedding(embedding_text)
+        embedding_text = await LLMService.generate_embedding_text(product_data, GEMINI)
+        embedding = await LLMService.create_embedding(embedding_text, GEMINI_EMBEDDING)
         # new_product.generated_review = generated_review
         new_product.embedding = embedding
         new_product.embedding_text = embedding_text
@@ -444,21 +419,3 @@ async def handle_links(updated_job):
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(updated_job.user_id, user_conversation)
         await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
-
-
-@scrapy_router.get("/update")
-async def run_spider():
-    scrapyd_url = "http://localhost:6800/schedule.json"  # Adjust if Scrapyd is not running on localhost
-    data = {
-        'project': 'default',
-        'spider': 'amazon',
-        'url': 'https://www.amazon.com/dp/B07VGRJDFY',
-        'job_id': '12345'
-    }
-    response = requests.post(scrapyd_url, data=data)
-    if response.status_code == 200:
-        # Scrapyd successfully accepted the request
-        return response.json()
-    else:
-        # Something went wrong
-        raise HTTPException(status_code=response.status_code, detail="Scrapyd failed to schedule the spider")

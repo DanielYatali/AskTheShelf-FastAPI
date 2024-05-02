@@ -85,14 +85,14 @@ def test_manager_test():
             "role": "system",
             "content": prompt
         },
-        # {
-        #     "role": "user",
-        #     "content": "I looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?",
-        # },
-        # {
-        #     "role": "system",
-        #     "content": f"{product}"
-        # },
+        {
+            "role": "user",
+            "content": "I looking for a laptop with at least 16GB of RAM and 1TB of storage. I also need a good graphics card. Can you help me find one?",
+        },
+        {
+            "role": "system",
+            "content": f"{product}"
+        },
         {
             "role": "user",
             "content": user_query
@@ -102,7 +102,7 @@ def test_manager_test():
     # Running the async function within the event loop
     loop = asyncio.get_event_loop()
     try:
-        response = loop.run_until_complete(LLMService.make_llm_request(conversation))
+        response = loop.run_until_complete(LLMService.create_gemini_embedding("this is bob", 'text-embedding-004'))
         print(response)
         assert response is not None  # You could add more specific assertions here
     except Exception as e:

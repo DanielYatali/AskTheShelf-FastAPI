@@ -20,6 +20,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if not authorization:
                 if 'ws' in request.url.path or 'wss' in request.url.path:
                     # Try to extract token from query parameters
+                    # Little hack, remove once web sockets are working
                     token = request.query_params.get('token')
                     if not token:
                         return JSONResponse(content={"detail": "Authorization token is missing"}, status_code=401)

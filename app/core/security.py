@@ -20,7 +20,6 @@ class UnauthenticatedException(HTTPException):
         )
 
 
-# 👇 new code
 class VerifyToken:
     """Does all the token verification using PyJWT"""
 
