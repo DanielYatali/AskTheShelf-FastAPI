@@ -209,7 +209,7 @@ async def process_in_batches(tasks, batch_size):
 async def process_product_data(product_data, updated_job, embedding_model=OPEN_AI_EMBEDDING, llm_model=GPT3):
     try:
         product_id = product_data.get("product_id")
-        affiliate_url = make_affiliate_link(updated_job.url)
+        affiliate_url = make_affiliate_link_from_asin(product_id)
         product_data["affiliate_url"] = affiliate_url
 
         existing_product = await ProductService.get_product_by_id(product_id)
