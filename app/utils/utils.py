@@ -51,5 +51,15 @@ def parse_json(json_string):
         logger.info(f"Fixed JSON: {fixed_json}")
         return json.loads(fixed_json)
     except Exception as e:
-        logger.error(f"Invalid JSON: {str(e)}")
-        return None
+        try:
+            logger.error(f"Invalid JSON: {str(e)}")
+            if json_string.startswith('```json') and json_string.endswith('```'):
+                logger.info("Attempting to parse JSON from code block")
+                json_string = json_string[len('```json'): -len('```')].strip()
+                fixed_json = repair_json(json_string)
+                logger.info(f"Fixed JSON: {fixed_json}")
+                return json.loads(fixed_json)
+            return None
+        except Exception as e:
+            logger.error(f"Invalid JSON: {str(e)}")
+            return None

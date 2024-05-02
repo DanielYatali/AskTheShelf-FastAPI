@@ -12,6 +12,7 @@ from app.services.product_service import ProductService, ProductErrorService
 from app.schemas.product_schema import ProductOut, ProductForUser
 from app.services.llm_service import LLMService
 from app.core.logger import logger
+from app.utils.utils import make_affiliate_link_from_asin
 
 product_router = APIRouter(dependencies=[Depends(HTTPBearer())])
 
@@ -184,3 +185,17 @@ async def chat_with_llm(request: Request, body: dict):
     except Exception as e:
         logger.error(e)
         raise HTTPException(status_code=404, detail="Error chatting with LLM")
+
+@product_router.post("/fix_products", summary="fix products")
+async def fix_products(request: Request):
+    try:
+        products = await ProductService.get_products()
+        for product in products:
+            if '[' in product.affiliate_url:
+                product.affiliate_url = make_affiliate_link_from_asin(product.product_id)
+                update_product = await ProductService.update_product(product.product_id, product)
+                logger.info(f"Fixed product {update_product.affiliate_url}")
+        return {"message": "Products fixed successfully"}
+    except Exception as e:
+        logger.error(e)
+        raise HTTPException(status_code=404, detail="Error fixing products")

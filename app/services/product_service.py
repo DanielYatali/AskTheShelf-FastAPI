@@ -84,6 +84,7 @@ class ProductService:
         existing_product.number_of_reviews = product.number_of_reviews
         existing_product.qa = product.qa
         existing_product.generated_review = product.generated_review
+        existing_product.affiliate_url = product.affiliate_url
         await existing_product.save()
         return existing_product
 
