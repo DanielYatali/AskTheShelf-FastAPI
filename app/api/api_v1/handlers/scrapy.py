@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Request, BackgroundTasks
 from app.core.config import manager
 from app.schemas.llm_schema import ActionResponse
-from app.utils.utils import make_affiliate_link, make_affiliate_link_from_asin
+from app.utils.utils import make_affiliate_link, make_affiliate_link_from_asin, parse_json
 from app.models.conversation_model import Message
 from app.models.product_error_model import ProductError
 from app.models.product_model import Product
@@ -134,7 +134,13 @@ async def handle_search_products(updated_job):
                 validate_products.append(ProductValidateSearch(product_id=product_id, embedding_text=embedding_text))
 
         product_ids_json = await LLMService.validate_embedding_search(validate_products, updated_job.user_query)
-        validated_products = json.loads(product_ids_json)
+        validated_products = parse_json(product_ids_json)
+        if not validated_products:
+            product_ids_json = await LLMService.validate_embedding_search(validate_products, updated_job.user_query)
+            validated_products = parse_json(product_ids_json)
+            if not validated_products:
+                logger.error("Bad response from LLM")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad response from LLM")
 
         new_product_cards = [card for card in product_cards if card.product_id in validated_products["products"]][:5]
         message_content = validated_products.get("message", "Here are the matching products based on your search.")
@@ -150,7 +156,8 @@ async def handle_search_products(updated_job):
             action = ActionResponse(action="basic_get_product_details", user_query=updated_job.user_query)
             await JobService.basic_get_products(updated_job.user_id, action, urls)
 
-        assistant_message = Message(role="assistant", content="We will fetch products details in the background for you. This may take a few seconds.")
+        assistant_message = Message(role="assistant",
+                                    content="We will fetch products details in the background for you. This may take a few seconds.")
         await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
         await JobService.delete_job(updated_job.job_id)
 
@@ -161,68 +168,6 @@ async def handle_search_products(updated_job):
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(updated_job.user_id, user_conversation)
         await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
-    # try:
-    #     job_id = updated_job.job_id
-    #     products = updated_job.result
-    #     product_cards = []
-    #     validate_products = []
-    #
-    #     for product in products:
-    #         product_data = product
-    #         product_id = product_data["product_id"]
-    #         if not product_id or product_id == '':
-    #             continue
-    #         embedding_text = json.dumps(product_data)
-    #         affiliate_link = make_affiliate_link_from_asin(product_data["product_id"])
-    #         product_data["affiliate_url"] = affiliate_link
-    #         product_card = ProductCard(**product_data)
-    #         product_validate = ProductValidateSearch(product_id=product_data["product_id"],
-    #                                                  embedding_text=embedding_text)
-    #         validate_products.append(product_validate)
-    #         product_cards.append(product_card)
-    #
-    #     product_ids = await LLMService.validate_embedding_search(validate_products, updated_job.user_query)
-    #     validated_products = json.loads(product_ids)
-    #
-    #     new_product_cards = []
-    #     max_products = 5
-    #     for product_card in product_cards:
-    #         if len(new_product_cards) >= max_products:
-    #             break
-    #         if product_card.product_id in validated_products["products"]:
-    #             new_product_cards.append(product_card)
-    #
-    #     user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
-    #     assistant_message = Message(
-    #         role="assistant",
-    #         content=validated_products["message"],
-    #         products=new_product_cards,
-    #     )
-    #     user_conversation.messages.append(assistant_message)
-    #     await ConversationService.update_conversation(updated_job.user_id, user_conversation)
-    #     await JobService.delete_job(updated_job.job_id)
-    #     urls = []
-    #     product_ids = json.loads(product_ids)
-    #     for product in product_ids["products"]:
-    #         url = "https://www.amazon.com/dp/" + product
-    #         urls.append(url)
-    #     action = ActionResponse(
-    #         action="basic_get_product_details",
-    #         user_query=updated_job.user_query,
-    #     )
-    #     if len(urls) > 5:
-    #         urls = urls[:5]
-    #     await JobService.basic_get_products(updated_job.user_id, action, urls)
-    #     await JobService.delete_job(job_id)
-    #
-    # except Exception as e:
-    #     logger.error("Error in handle_multiple_products: ", e)
-    #     user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
-    #     assistant_message = Message(
-    #         role="assistant",
-    #         content="Error processing search results, please try again.",
-    #     )
-    #     user_conversation.messages.append(assistant_message)
 
 
 async def handle_get_basic_product_details(updated_job):
@@ -279,7 +224,7 @@ async def process_product_data(product_data, updated_job, embedding_model=OPEN_A
             await handle_product_errors(product_id, updated_job.job_id, updated_job.user_id, errors)
 
         embedding_text = await LLMService.generate_embedding_text(product_data, llm_model)
-        #Needs to be OpenAI for now because the dimensions are already indexed with 1536 dimensions
+        # Needs to be OpenAI for now because the dimensions are already indexed with 1536 dimensions
         embedding = await LLMService.create_embedding(embedding_text, OPEN_AI_EMBEDDING)
 
         new_product.embedding = embedding
@@ -290,7 +235,8 @@ async def process_product_data(product_data, updated_job, embedding_model=OPEN_A
     except Exception as e:
         title = product_data.get("title")
         logger.error(f"Error in process_product_data: {e}")
-        await handle_error_in_conversation(updated_job, message=f"Error processing product details for {title}, please try again.")
+        await handle_error_in_conversation(updated_job,
+                                           message=f"Error processing product details for {title}, please try again.")
 
 
 async def handle_product_errors(product_id, job_id, user_id, errors):

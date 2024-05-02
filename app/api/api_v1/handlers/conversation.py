@@ -17,9 +17,11 @@ async def get_conversations(request: Request) -> Conversation:
     return conversations
 
 
-@conversation_router.delete("/{conversation_id}", summary="Delete conversation by id")
-async def delete_conversation(request: Request) -> dict[str, str]:
+@conversation_router.delete("/{user_id}", summary="Delete conversation by id")
+async def delete_conversation(request: Request, user_id: str) -> dict[str, str]:
     user = request.state.user
+    if user_id != user.user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     conversation = await ConversationService.delete_conversation(user.user_id)
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")

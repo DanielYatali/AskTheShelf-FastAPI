@@ -23,9 +23,13 @@ Expected output: {
   "action": "find_similar",
   "user_query": "shoes like the Nike Air Max",
   "embedding_query": "Nike Air Max",
-  "product_id": ""
+  "products": [
+        {
+          "product_name": "Nike Air Max",
+          "product_id": ""
+        }
+   ]
   }
-}
 
 Example 2:
 User query: "How does the MacBook Pro compare to the Dell XPS?"
@@ -50,7 +54,12 @@ Expected output: {
   "action": "get_product_details",
   "user_query": "what do customers say about the iPhone 13?",
   "embedding_query": "iPhone 13",
-  "product_id": ""
+  "products": [
+      {
+        "product_name": "iPhone 13",
+        "product_id": ""
+      }
+  ]
 }
 
 Example 4:
@@ -70,11 +79,11 @@ Expected output: {
 
 [Format]
 You must return a JSON object respecting the following format:
+You must always use double quotes
 {
   "action": "find_similar" | "compare_products" | "get_product_details" | "search" | "more_info",
   "user_query": "string",
   "embedding_query": "string",
-  "product_id": "string",
   "products": [
     {
       "product_name": "string",

@@ -75,8 +75,15 @@ async def chat_with_llm(query, user_id, model):
             return assistant_message
 
     except Exception as e:
+        assistant_message = Message(
+            role="assistant",
+            content="I'm sorry, I encountered an error while processing your request"
+        )
+        user_conversation = await ConversationService.get_conversation_by_user_id(user_id)
+        user_conversation.messages.append(assistant_message)
+        await ConversationService.update_conversation(user_id, user_conversation)
         logger.error(e)
-        raise HTTPException(status_code=404, detail="Error chatting with LLM")
+        return assistant_message
 
 
 @app.websocket("/ws/{user_id}")

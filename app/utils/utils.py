@@ -1,4 +1,7 @@
+import json
 import re
+
+from app.core.logger import logger
 
 
 def extract_asin_from_url(url):
@@ -37,3 +40,25 @@ def make_affiliate_link_from_asin(asin, affiliate_tag=None):
     if not affiliate_tag:
         affiliate_tag = '070777-20'
     return f"https://www.amazon.com/dp/{asin}?tag={affiliate_tag}"
+
+
+def parse_json(json_string):
+    # Remove triple backticks if they exist
+    logger.info(f"JSON String: {json_string}")
+    # Replace single quotes with double quotes
+    json_string = json_string.replace("'", '"')
+
+    # Attempt to parse JSON
+    try:
+        return json.loads(json_string)
+    except json.JSONDecodeError as e:
+        logger.info(f"First JSON Decode Error: {str(e)}")
+
+        json_string = re.sub(r',(\s*[\}\]])', r'\1', json_string)
+
+        # Attempt to parse JSON again
+        try:
+            return json.loads(json_string)
+        except json.JSONDecodeError as e:
+            logger.info(f"Second JSON Decode Error: {str(e)}")
+            return None

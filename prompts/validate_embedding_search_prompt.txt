@@ -5,6 +5,7 @@ You will also be given json data in the structure below
 
 [Format]
 Your response must be in the following json format
+You must always use double quotes
 {
     "products": ["string", "string"],
     "message": "string"
