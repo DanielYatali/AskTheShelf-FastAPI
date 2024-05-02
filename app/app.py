@@ -44,8 +44,9 @@ async def chat_with_llm(query, user_id, model):
             role="user",
             content=query,
         )
-        response = await LLMService.get_action_from_llm(query, user_conversation, model)
         user_conversation.messages.append(user_message)
+        await ConversationService.update_conversation(user_id, user_conversation)
+        response = await LLMService.get_action_from_llm(query, user_conversation, model)
         if isinstance(response, dict):
             if 'products' in response:
                 assistant_message = Message(
