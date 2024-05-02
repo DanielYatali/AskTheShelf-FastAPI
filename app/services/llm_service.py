@@ -69,7 +69,7 @@ class LLMService:
                 response = await LLMService.validate_embedding_search(products, query, model)
                 response_data = parse_json(response)
                 if not response_data:
-                    logger.error("Bad response from LLM", response)
+                    logger.error("Bad response from LLM")
                     response = await LLMService.validate_embedding_search(products, query, model)
                     response_data = parse_json(response)
                     if not response_data:

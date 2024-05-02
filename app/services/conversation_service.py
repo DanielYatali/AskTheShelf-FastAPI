@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+from app.core.logger import logger
 from app.models.conversation_model import Conversation
 
 
@@ -26,11 +27,12 @@ class ConversationService:
     async def update_conversation(user_id: str, conversation: Conversation) -> Optional[Conversation]:
         existing_conversation = await Conversation.find_one(Conversation.user_id == user_id)
         if not existing_conversation:
+            logger.warning(f"No conversation found for user_id: {user_id}")
             return None
+        if len(conversation.messages) > 50:
+            conversation.messages.pop(0)
         existing_conversation.messages = conversation.messages
         existing_conversation.updated_at = datetime.now()
-        if len(existing_conversation.messages) > 30:
-            existing_conversation.messages.pop(0)
         await existing_conversation.save()
         return existing_conversation
 

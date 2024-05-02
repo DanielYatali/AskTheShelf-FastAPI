@@ -1,6 +1,8 @@
 import json
 import re
 
+from fix_busted_json import repair_json
+
 from app.core.logger import logger
 
 
@@ -43,22 +45,11 @@ def make_affiliate_link_from_asin(asin, affiliate_tag=None):
 
 
 def parse_json(json_string):
-    # Remove triple backticks if they exist
-    logger.info(f"JSON String: {json_string}")
-    # Replace single quotes with double quotes
-    json_string = json_string.replace("'", '"')
-
-    # Attempt to parse JSON
+    logger.info(f"Attempting to parse JSON: {json_string}")
     try:
-        return json.loads(json_string)
-    except json.JSONDecodeError as e:
-        logger.info(f"First JSON Decode Error: {str(e)}")
-
-        json_string = re.sub(r',(\s*[\}\]])', r'\1', json_string)
-
-        # Attempt to parse JSON again
-        try:
-            return json.loads(json_string)
-        except json.JSONDecodeError as e:
-            logger.info(f"Second JSON Decode Error: {str(e)}")
-            return None
+        fixed_json = repair_json(json_string)
+        logger.info(f"Fixed JSON: {fixed_json}")
+        return json.loads(fixed_json)
+    except Exception as e:
+        logger.error(f"Invalid JSON: {str(e)}")
+        return None
