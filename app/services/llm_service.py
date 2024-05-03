@@ -316,7 +316,7 @@ class LLMService:
         return response
 
     @staticmethod
-    async def find_similar(action_response: ActionResponse, model: str):
+    async def find_similar(action_response: ActionResponse, model: str, user_id: str):
         # try:
         if action_response.products and len(action_response.products) > 0 and action_response.products[0]["product_id"] != "":
             product_id = action_response.products[0]["product_id"]
@@ -330,14 +330,20 @@ class LLMService:
             ]
             documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
                                                                           excludes,
-                                                                          action_response.embedding_query, 5, model)
+                                                                          action_response.embedding_query, 7, model)
             if len(documents) == 0:
+                job = await JobService.search_amazon_products(action_response.embedding_query,
+                                                              user_id,
+                                                              action_response.user_query)
+                if job:
+                    return ("No similar products found in our database, we are searching Amazon for you, "
+                            "please wait...")
                 return ("No similar products found, we may not have that product in our database yet, "
                         "try using the link feature to add it")
             productCards = []
             for product in documents:
                 productCards.append(ProductCard(**product))
-            return productCards
+            return {"products": productCards, "message": message}
         elif action_response.embedding_query and action_response.embedding_query != "":
             embedding = await LLMService.create_embedding(action_response.embedding_query, model)
             excludes = [
@@ -348,10 +354,17 @@ class LLMService:
             ]
             documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
                                                                           excludes,
-                                                                          action_response.embedding_query, 5, model)
+                                                                          action_response.embedding_query, 7, model)
             if len(documents) == 0:
-                return ("No similar products found, we may not have that product in our database yet, "
-                        "try using the link feature to add it")
+                job = await JobService.search_amazon_products(action_response.embedding_query,
+                                                              user_id,
+                                                              action_response.user_query)
+                if job:
+                    return ("No similar products found in our database, we are searching Amazon for you, "
+                            "please wait...")
+                return "No similar products found, we may not have that product in our database yet"
+                # return ("No similar products found, we may not have that product in our database yet, "
+                #         "try using the link feature to add it")
 
             productCards = []
             for product in documents:
@@ -360,7 +373,8 @@ class LLMService:
 
     @staticmethod
     async def get_product_details(action_response: ActionResponse, model: str, user_id: str):
-        if action_response.products and len(action_response.products) > 0 and action_response.products[0]["product_id"] != "":
+        if action_response.products and len(action_response.products) > 0 and action_response.products[0][
+            "product_id"] != "":
             product_id = action_response.products[0]["product_id"]
             product = await ProductService.get_product_by_id(product_id)
             if product is None:
@@ -481,7 +495,7 @@ class LLMService:
                 return await LLMService.get_product_details(actionResponse, model, conversation.user_id)
             case "find_similar":
                 logger.info("In find_similar case")
-                return await LLMService.find_similar(actionResponse, model)
+                return await LLMService.find_similar(actionResponse, model, conversation.user_id)
             case "compare_products":
                 logger.info("In compare_products case")
                 return await LLMService.compare_products(actionResponse, model, conversation.user_id)
