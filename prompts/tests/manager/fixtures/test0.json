@@ -1,0 +1,77 @@
+{
+  "messages": [
+    {
+      "timestamp": "2024-05-05T00:05:55.884000",
+      "role": "user",
+      "content": "Hey im looking for a samsung smart phone with at least 8gb ram",
+      "products": [],
+      "related_products": []
+    },
+    {
+      "timestamp": "2024-05-05T00:06:04.907000",
+      "role": "assistant",
+      "content": "These Samsung smartphones all have at least 8GB of RAM: Samsung Galaxy S24 Ultra Dual SIM 12GB RAM 256 GB Storage, SAMSUNG Galaxy S24 Ultra 256GB AI Smartphone, SAMSUNG Galaxy S24 Dual SIM, SM-S921B/DS Dual Sim EU/UK Model 8GB Ram 256 GB Storage Factory Unlocked AI Smartphone, (Onyx Black), Galaxy S24+ Plus 5g SM-S926B/DS 256GB 12GB RAM, 50 MP Camera, AI Smartphone, Unlocked Android International Model 2024 Cobalt Violet",
+      "products": [
+        {
+          "product_id": "B0CT45DH2H",
+          "title": "SAMSUNG Galaxy S24 Ultra Dual SIM SM-S928B/DS Dual Sim EU/UK Model 12GB Ram 256 GB Storage Factory Unlocked (Titanium Gray)",
+          "image_url": "https://m.media-amazon.com/images/I/515yw4KBzZL.__AC_SX300_SY300_QL70_FMwebp_.jpg",
+          "price": 1259.0,
+          "rating": 4.5,
+          "domain": "www.amazon.com",
+          "stock": "Only 17 left in stock - order soon.",
+          "affiliate_url": "https://www.amazon.com/dp/B0CT45DH2H?tag=070777-20",
+          "discount_percentage": -18.0
+        },
+        {
+          "product_id": "B0CMDM65JH",
+          "title": "SAMSUNG Galaxy S24 Ultra Cell Phone, 256GB AI Smartphone, Unlocked Android, 200MP, 100x Zoom Cameras, Long Battery Life, S Pen, US Version, 2024, Titanium Black",
+          "image_url": "https://m.media-amazon.com/images/I/71WcjsOVOmL.__AC_SX300_SY300_QL70_FMwebp_.jpg",
+          "price": 1299.99,
+          "rating": 4.3,
+          "domain": "www.amazon.com",
+          "stock": "In Stock",
+          "affiliate_url": "https://www.amazon.com/dp/B0CMDM65JH?tag=070777-20",
+          "discount_percentage": -15.0
+        },
+        {
+          "product_id": "B0CTD46W55",
+          "title": "SAMSUNG Galaxy S24 Dual SIM, SM-S921B/DS Dual Sim EU/UK Model 8GB Ram 256 GB Storage Factory Unlocked AI Smartphone, (Onyx Black)",
+          "image_url": "https://m.media-amazon.com/images/I/41Wbrxb5NWL.__AC_SX300_SY300_QL70_FMwebp_.jpg",
+          "price": 780.0,
+          "rating": 3.6,
+          "domain": "www.amazon.com",
+          "stock": "Only 1 left in stock - order soon.",
+          "affiliate_url": "https://www.amazon.com/dp/B0CTD46W55?tag=070777-20",
+          "discount_percentage": -7.0
+        },
+        {
+          "product_id": "B0CTD5D76F",
+          "title": "Galaxy S24+ Plus 5g SM-S926B/DS 256GB 12GB RAM, 50 MP Camera, AI Smartphone, Unlocked Android International Model 2024 Cobalt Violet",
+          "image_url": "https://m.media-amazon.com/images/I/61xUkISdi-L.__AC_SX300_SY300_QL70_FMwebp_.jpg",
+          "price": 900.0,
+          "rating": 3.4,
+          "domain": "www.amazon.com",
+          "stock": "Only 7 left in stock - order soon.",
+          "affiliate_url": "https://www.amazon.com/dp/B0CTD5D76F?tag=070777-20",
+          "discount_percentage": -10.0
+        }
+      ],
+      "related_products": []
+    }
+  ],
+  "query": "Seems a  bit pricy what can i get with similar specs but under 600",
+  "answer": {
+    "action": "find_similar",
+    "user_query": "Seems a bit pricy what can i get with similar specs but under 600",
+    "embedding_query": "samsung phone 8gb ram under 600",
+    "products": [
+      {
+        "product_name": "Samsung Galaxy S24",
+        "product_id": "B0CTD5D76F"
+      }
+    ]
+  }
+}
+
+

@@ -214,7 +214,8 @@ class LLMService:
         client = OpenAI()
         completion = client.chat.completions.create(
             model=model,
-            messages=conversation
+            messages=conversation,
+            temperature=0
         )
         message = completion.choices[0].message.model_dump()
         return message["content"]
@@ -222,8 +223,12 @@ class LLMService:
     @staticmethod
     async def make_gemini_request(conversation, model=GEMINI):
         # try:
+        generation_config = genai.GenerationConfig(
+            candidate_count=1,
+            temperature=0,
+        )
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel(model)
+        model = genai.GenerativeModel(model, generation_config=generation_config)
         response = await model.generate_content_async(json.dumps(conversation))
         return response.text
 
@@ -318,7 +323,8 @@ class LLMService:
     @staticmethod
     async def find_similar(action_response: ActionResponse, model: str, user_id: str):
         # try:
-        if action_response.products and len(action_response.products) > 0 and action_response.products[0]["product_id"] != "":
+        if action_response.products and len(action_response.products) > 0 and action_response.products[0][
+            "product_id"] != "":
             product_id = action_response.products[0]["product_id"]
             product = await ProductService.get_product_by_id(product_id)
             embedding = product.embedding

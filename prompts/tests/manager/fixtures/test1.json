@@ -1,0 +1,10 @@
+{
+  "messages": [],
+  "query": "Hi",
+  "answer": {
+    "action": "none",
+    "response": "Hi, how can I help you?"
+  }
+}
+
+
