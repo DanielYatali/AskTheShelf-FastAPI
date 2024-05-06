@@ -27,7 +27,9 @@ allowed_origins = [
     "https://www.asktheshelf.com",
     "http://localhost",
     "https://localhost",
-    "capacitor://localhost"
+    "capacitor://localhost",
+    "https://scraper-dev.up.railway.app",
+    "https://asktheshelf-fontend-dev.up.railway.app"
 ]
 
 
