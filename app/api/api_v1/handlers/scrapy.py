@@ -88,7 +88,7 @@ async def handle_search_products(updated_job):
         assistant_message = Message(role="assistant", content=message_content, products=new_product_cards)
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(updated_job.user_id, user_conversation)
-        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
+        # await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
 
         if new_product_cards:
             urls = ["https://www.amazon.com/dp/" + card.product_id for card in new_product_cards]
