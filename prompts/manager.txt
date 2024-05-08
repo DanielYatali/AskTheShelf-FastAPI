@@ -117,6 +117,8 @@ You are a shopping assistant focused on providing detailed and contextual assist
 The response should be helpful, informative, and context-aware, ensuring that users receive accurate and relevant information.
 
 
+### Conversation
+{{conversation}}
 
 
 

@@ -62,36 +62,52 @@ def make_gemini_request(conversation, model=GEMINI):
 
 
 @pytest.mark.parametrize('json_file', get_all_json_files('fixtures'))
-def test_validate_search(json_file):
+def test_product_chat(json_file):
     """
     Tests that the manager can handle requests from both OpenAI and Gemini.
     """
-    with open(json_file, 'r') as f:
-        json_data = json.load(f)
+    # with open(json_file, 'r') as f:
+    #     json_data = json.load(f)
+    with open(json_file, 'r', encoding='utf-8') as f:
+        try:
+            json_data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON from file '{json_file}': {e}")
+            return None
     query = json_data["query"]
-    products = json_data["products"]
     messages = json_data["messages"]
-    with open("validate_embedding_search_prompt.txt", "r") as f:
+    product = json_data["product"]
+    answers = json_data["answer"]
+    with open("product_chat_prompt.txt", "r") as f:
         prompt = f.read()
-
-    prompt = prompt.replace("{{products}}", json.dumps(products))
-    prompt = prompt.replace("{{conversation}}", json.dumps(messages))
+    prompt = prompt.replace("{{product}}", json.dumps(product))
     conversation = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": query}
+        {
+            "role": "system",
+            "content": prompt
+        },
     ]
-    openai_response = json.loads(make_openai_request(conversation))
-    gemini_response = json.loads(make_gemini_request(conversation))
+    for message in messages:
+        conversation.append({
+            "role": message["role"],
+            "content": json.dumps(message)
+        })
+
+    pd.set_option('display.max_columns', None)  # Show all columns
+    pd.set_option('display.max_rows', None)  # Show all rows
+    pd.set_option('display.max_colwidth', None)
+    openai_response = (make_openai_request(conversation))
+    gemini_response = (make_gemini_request(conversation))
     # llama_response = (make_groq_request(conversation))
     # mixed_response = (make_groq_request(conversation, Mixtral))
     # gemma_response = (make_groq_request(conversation, Gemma))
 
     print("Open AI Response:")
-    print(json.dumps(openai_response, indent=4))
+    print(openai_response)
 
     print("Gemini Response:")
-    print(json.dumps(gemini_response, indent=4))
-
+    print(gemini_response)
+    #
     # print("Llama Response:")
     # print(llama_response)
     #

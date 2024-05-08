@@ -76,7 +76,7 @@ async def search_similar_products(request: Request, body: dict):
             "reviews",
             "qa"
         ]
-        documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding, excludes, query, 5)
+        documents, message = await LLMService.find_similar_products(Product.get_motor_collection(), embedding, excludes, query, 5)
         return documents
     except Exception as e:
         logger.error(e)

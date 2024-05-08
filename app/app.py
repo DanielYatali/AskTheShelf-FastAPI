@@ -48,34 +48,10 @@ async def chat_with_llm(query, user_id, model):
         )
         user_conversation.messages.append(user_message)
         await ConversationService.update_conversation(user_id, user_conversation)
-        response = await LLMService.get_action_from_llm(query, user_conversation, model)
-        if isinstance(response, dict):
-            if 'products' in response:
-                assistant_message = Message(
-                    role="assistant",
-                    content=response['message'],
-                    products=response['products'],
-                )
-                user_conversation.messages.append(assistant_message)
-                await ConversationService.update_conversation(user_id, user_conversation)
-                return assistant_message
-            else:
-                assistant_message = Message(
-                    role="assistant",
-                    content=response['message'],
-                    related_products=response['related_products'],
-                )
-                user_conversation.messages.append(assistant_message)
-                await ConversationService.update_conversation(user_id, user_conversation)
-                return assistant_message
-        else:
-            assistant_message = Message(
-                role="assistant",
-                content=response,
-            )
-            user_conversation.messages.append(assistant_message)
-            await ConversationService.update_conversation(user_id, user_conversation)
-            return assistant_message
+        assistant_message = await LLMService.get_action_from_llm(query, user_conversation, model)
+        user_conversation.messages.append(assistant_message)
+        await ConversationService.update_conversation(user_id, user_conversation)
+        return assistant_message
 
     except Exception as e:
         assistant_message = Message(

@@ -13,7 +13,7 @@ from app.schemas.product_schema import ProductOut, ProductCard, ProductValidateS
 from app.services.conversation_service import ConversationService
 from app.services.job_service import JobService
 from app.services.product_service import ProductService, ProductErrorService
-from app.services.llm_service import LLMService, GPT3, GEMINI_EMBEDDING, OPEN_AI_EMBEDDING, GEMINI
+from app.services.llm_service import LLMService, GPT3, GEMINI_EMBEDDING, OPEN_AI_EMBEDDING, GEMINI, RequestContext
 from app.core.logger import logger
 
 scrapy_router = APIRouter()
@@ -43,8 +43,6 @@ async def update_job(request: Request, job: dict, background_tasks: BackgroundTa
         match updated_job.action:
             case "link":
                 background_tasks.add_task(handle_links, updated_job)
-            # case "get_product_details":
-            #     background_tasks.add_task(handle_get_product_details, updated_job)
             case "search":
                 background_tasks.add_task(handle_search_products, updated_job)
             case "basic_get_product_details":
@@ -60,67 +58,6 @@ async def update_job(request: Request, job: dict, background_tasks: BackgroundTa
         return {"status": "failed", "message": "Error processing results, please try again"}
 
 
-async def handle_compare_products(updated_job):
-    try:
-        products_data = updated_job.result
-        user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
-        job_id = updated_job.job_id
-        products_ids = []
-        for product_data in products_data:
-            if not product_data:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No product data found in job")
-            product_id = product_data["product_id"]
-            products_ids.append({"product_id": product_id})
-            affiliate_url = make_affiliate_link(updated_job.url)
-            product_data["affiliate_url"] = affiliate_url
-            existing_product = await ProductService.get_product_by_id(product_id)
-            if existing_product:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product already exists")
-            new_product = Product(**product_data)
-            new_product.user_id = updated_job.user_id
-            new_product = await ProductService.create_product(new_product)
-            errors = await ProductService.validate_product(new_product)
-            if len(errors) > 0:
-                new_product_error = ProductError(
-                    product_id=product_id,
-                    job_id=job_id,
-                    user_id=updated_job.user_id,
-                    error=errors,
-                )
-                await ProductErrorService.create_product_error(new_product_error)
-            embedding_text = await LLMService.generate_embedding_text(product_data)
-            embedding = await LLMService.create_embedding(embedding_text)
-            new_product.embedding = embedding
-            new_product.embedding_text = embedding_text
-            new_product.updated_at = datetime.now()
-            await ProductService.update_product(product_id, new_product)
-        action = ActionResponse(
-            action="compare_products",
-            user_query=updated_job.user_query,
-            products=products_ids
-        )
-        response = await LLMService.compare_products(action, GPT3, user_conversation.user_id)
-        assistant_message = Message(
-            role="assistant",
-            content=response['message'],
-            related_products=response['related_products'],
-        )
-        user_conversation.messages.append(assistant_message)
-        await ConversationService.update_conversation(user_conversation.user_id, user_conversation)
-        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
-        await JobService.delete_job(job_id)
-    except Exception as e:
-        logger.error("Error in handle_compare_products: ", e)
-        user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
-        assistant_message = Message(
-            role="assistant",
-            content="Error comparing products, please try again.",
-        )
-        user_conversation.messages.append(assistant_message)
-        await ConversationService.update_conversation(user_conversation.user_id, user_conversation)
-        await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
-
-
 async def handle_search_products(updated_job):
     try:
         product_cards = []
@@ -133,19 +70,21 @@ async def handle_search_products(updated_job):
                 embedding_text = json.dumps(product)
                 validate_products.append(ProductValidateSearch(product_id=product_id, embedding_text=embedding_text))
 
-        product_ids_json = await LLMService.validate_embedding_search(validate_products, updated_job.user_query)
+        user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
+        product_ids_json = await LLMService.validate_embedding_search(validate_products, user_conversation,
+                                                                      updated_job.user_query)
         validated_products = parse_json(product_ids_json)
-        if not validated_products:
-            product_ids_json = await LLMService.validate_embedding_search(validate_products, updated_job.user_query)
+        if not validated_products and validate_products != []:
+            product_ids_json = await LLMService.validate_embedding_search(validate_products, user_conversation,
+                                                                          updated_job.user_query)
             validated_products = parse_json(product_ids_json)
-            if not validated_products:
+            if not validated_products and validate_products != []:
                 logger.error("Bad response from LLM")
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bad response from LLM")
 
         new_product_cards = [card for card in product_cards if card.product_id in validated_products["products"]][:5]
         message_content = validated_products.get("message", "Here are the matching products based on your search.")
 
-        user_conversation = await ConversationService.get_conversation_by_user_id(updated_job.user_id)
         assistant_message = Message(role="assistant", content=message_content, products=new_product_cards)
         user_conversation.messages.append(assistant_message)
         await ConversationService.update_conversation(updated_job.user_id, user_conversation)
@@ -155,9 +94,8 @@ async def handle_search_products(updated_job):
             urls = ["https://www.amazon.com/dp/" + card.product_id for card in new_product_cards]
             action = ActionResponse(action="basic_get_product_details", user_query=updated_job.user_query)
             await JobService.basic_get_products(updated_job.user_id, action, urls)
-
-        assistant_message = Message(role="assistant",
-                                    content="We will fetch products details in the background for you. This may take a few seconds.")
+            assistant_message = Message(role="assistant",
+                                        content="We will fetch products details in the background for you. This may take a few seconds.")
         await manager.send_personal_json(assistant_message.json(), user_conversation.user_id)
         await JobService.delete_job(updated_job.job_id)
 

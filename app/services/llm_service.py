@@ -1,5 +1,6 @@
 import json
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List, Optional, Union, Dict
 
 import aiofiles
 import httpx
@@ -29,12 +30,32 @@ Llama = "Llama3-8b-8192"
 GEMINI_EMBEDDING = "text-embedding-004"
 
 
+@dataclass
+class RequestContext:
+    conversation: Conversation
+    model: str
+    user_query: str
+    action: Optional[ActionResponse] = None
+
+
 class LLMService:
     @staticmethod
-    async def find_similar_embeddings(collection, embedding: List[float], excludes: List[str], query: str,
-                                      limit: int = 1, model: Optional[str] = None
-                                      ):
+    async def find_similar_products(request_context: RequestContext, limit: int):
         # Build the pipeline for vector search
+        collection = Product.get_motor_collection()
+        action = request_context.action
+        conversation = request_context.conversation
+        query = action.embedding_query
+        model = request_context.model
+        excludes = [
+            "_id",
+            "embedding",
+            "similar_products",
+            "user_id",
+        ]
+        if not limit:
+            limit = 1
+        embedding = await LLMService.create_embedding(action.embedding_query, model)
         pipeline = [
             {
                 "$vectorSearch": {
@@ -66,11 +87,11 @@ class LLMService:
         # If products were found, validate them using LLM
         if products:
             try:
-                response = await LLMService.validate_embedding_search(products, query, model)
+                response = await LLMService.validate_embedding_search(products, conversation, query, model)
                 response_data = parse_json(response)
                 if not response_data:
                     logger.error("Bad response from LLM")
-                    response = await LLMService.validate_embedding_search(products, query, model)
+                    response = await LLMService.validate_embedding_search(products, conversation, query, model)
                     response_data = parse_json(response)
                     if not response_data:
                         return [], "Bad response from LLM"
@@ -79,7 +100,6 @@ class LLMService:
             except Exception as e:
                 logger.error("Error validating embeddings with LLM " + str(e))
                 raise HTTPException(status_code=500, detail="Error validating embeddings with LLM")
-
             # Filter the products based on the validated IDs
             filtered_products = [
                 doc for doc in old_documents
@@ -90,13 +110,19 @@ class LLMService:
         return [], ""
 
     @staticmethod
-    async def validate_embedding_search(products: list[ProductValidateSearch], query, model=None):
+    async def validate_embedding_search(products: list[ProductValidateSearch], conversation: Conversation, query: str,
+                                        model=None):
         async with aiofiles.open('prompts/validate_embedding_search_prompt.txt', mode='r') as file:
             prompt = await file.read()
+
+        context = conversation.messages[-11:]
+        # remove the last message which is the user query
+        context.pop()
+        json_context = [item.json() for item in context]
+        prompt = prompt.replace("{{conversation}}", json.dumps(json_context))
+        prompt = prompt.replace("{{products}}", json.dumps([product.dict() for product in products]))
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user",
-             "content": f"{products}"},
             {"role": "user", "content": query}
         ]
         return await LLMService.llm_request(messages, model)
@@ -182,16 +208,23 @@ class LLMService:
         return await LLMService.llm_request(messages, model)
 
     @staticmethod
-    async def product_chat(product, query, model):
-        # try:
+    async def product_chat(product: Dict, action: ActionResponse, request_context: RequestContext, model: str) -> str:
         async with aiofiles.open('prompts/product_chat_prompt.txt', mode='r') as file:
             prompt = await file.read()
+        conversation = request_context.conversation
+        query = action.user_query
         product.pop("embedding", None)
+        product.pop("similar_products", None)
+        product.pop("embedding_text", None)
 
+        context = conversation.messages[-11:]
+        # remove the last message which is the user query
+        context.pop()
+        json_context = [item.json() for item in context]
+        prompt = prompt.replace("{{conversation}}", json.dumps(json_context))
+        prompt = prompt.replace("{{product}}", json.dumps(product))
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user",
-             "content": f"{product}"},
             {"role": "user", "content": query}
         ]
         response = await LLMService.llm_request(messages, model)
@@ -234,7 +267,6 @@ class LLMService:
 
     @staticmethod
     async def make_groq_request(conversation, model=Llama):
-        # try:
         client = Groq(
             api_key=settings.GROQ_API_KEY,
         )
@@ -257,7 +289,6 @@ class LLMService:
 
     @staticmethod
     async def llm_request(conversation, model=GPT3):
-        # try:
         if model == GPT3:
             return await LLMService.make_openai_request(conversation, GPT3)
         elif model == GEMINI:
@@ -268,11 +299,12 @@ class LLMService:
 
     @staticmethod
     async def compare(product1, product2, user_query, model):
-        # try:
         async with aiofiles.open('prompts/compare_products_prompt.txt', mode='r') as file:
             prompt = await file.read()
         product1.pop("embedding", None)
+        product1.pop("embedding_text", None)
         product2.pop("embedding", None)
+        product2.pop("embedding_text", None)
         messages = [
             {"role": "system", "content": prompt},
             {"role": "user",
@@ -287,15 +319,14 @@ class LLMService:
     async def manager(query, conversation: Conversation, model):
         async with aiofiles.open('prompts/manager.txt', mode='r') as file:
             prompt = await file.read()
-        context = []
-        for message in conversation.messages[-10:]:
-            if message.products:
-                context.append({"role": message.role, "content": f'{message.products}'})
-            else:
-                context.append({"role": message.role, "content": json.dumps(message.content)})
+        # context is an array of Message objects
+        context = conversation.messages[-11:]
+        context.pop()
+        json_context = [item.json() for item in context]
+
+        prompt = prompt.replace("{{conversation}}", json.dumps(json_context))
         messages = [
             {"role": "system", "content": prompt},
-            *context,
             {"role": "user", "content": query}
         ]
         response = await LLMService.llm_request(messages, model)
@@ -321,216 +352,190 @@ class LLMService:
         return response
 
     @staticmethod
-    async def find_similar(action_response: ActionResponse, model: str, user_id: str):
-        # try:
-        if action_response.products and len(action_response.products) > 0 and action_response.products[0][
-            "product_id"] != "":
-            product_id = action_response.products[0]["product_id"]
-            product = await ProductService.get_product_by_id(product_id)
-            embedding = product.embedding
-            excludes = [
-                "_id",
-                "reviews",
-                "embedding",
-                "qa"
-            ]
-            documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
-                                                                          excludes,
-                                                                          action_response.embedding_query, 7, model)
-            if len(documents) == 0:
-                job = await JobService.search_amazon_products(action_response.embedding_query,
-                                                              user_id,
-                                                              action_response.user_query)
-                if job:
-                    return ("No similar products found in our database, we are searching Amazon for you, "
-                            "please wait...")
-                return ("No similar products found, we may not have that product in our database yet, "
-                        "try using the link feature to add it")
-            productCards = []
-            for product in documents:
-                productCards.append(ProductCard(**product))
-            return {"products": productCards, "message": message}
-        elif action_response.embedding_query and action_response.embedding_query != "":
-            embedding = await LLMService.create_embedding(action_response.embedding_query, model)
-            excludes = [
-                "_id",
-                "reviews",
-                "embedding",
-                "qa"
-            ]
-            documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
-                                                                          excludes,
-                                                                          action_response.embedding_query, 7, model)
-            if len(documents) == 0:
-                job = await JobService.search_amazon_products(action_response.embedding_query,
-                                                              user_id,
-                                                              action_response.user_query)
-                if job:
-                    return ("No similar products found in our database, we are searching Amazon for you, "
-                            "please wait...")
-                return "No similar products found, we may not have that product in our database yet"
-                # return ("No similar products found, we may not have that product in our database yet, "
-                #         "try using the link feature to add it")
-
-            productCards = []
-            for product in documents:
-                productCards.append(ProductCard(**product))
-            return {"products": productCards, "message": message}
+    async def find_product_by_name(request_context: RequestContext, product_name) -> Union[Product, None]:
+        request_context.conversation.messages = []
+        request_context.action.embedding_query = product_name
+        documents, message = await LLMService.find_similar_products(request_context, 1)
+        if len(documents) == 0:
+            return None
+        return documents[0]
 
     @staticmethod
-    async def get_product_details(action_response: ActionResponse, model: str, user_id: str):
-        if action_response.products and len(action_response.products) > 0 and action_response.products[0][
-            "product_id"] != "":
-            product_id = action_response.products[0]["product_id"]
+    async def find_similar(request_context: RequestContext) -> Message:
+        action = request_context.action
+
+        if LLMService.is_valid_product(action):
+            product_id = action.products[0]["product_id"]
             product = await ProductService.get_product_by_id(product_id)
+            action.embedding_query = product.embedding_text
+
+            return await LLMService.process_similarity_search(request_context, 10)
+
+        if action.embedding_query:
+            return await LLMService.process_similarity_search(request_context, 10)
+
+        return Message(
+            role="assistant",
+            content="Encounter an error while processing the request, please try again."
+        )
+
+    @staticmethod
+    def is_valid_product(action):
+        return action.products and len(action.products) > 0 and action.products[0].get("product_id")
+
+    @staticmethod
+    async def process_similarity_search(request_context, limit) -> Message:
+        action = request_context.action
+        conversation = request_context.conversation
+        documents, message = await LLMService.find_similar_products(request_context, limit)
+        if not documents:
+            response = await LLMService.handle_no_documents_found(action, conversation)
+            return Message(
+                role="assistant",
+                content=response
+            )
+
+        product_cards = [ProductCard(**product) for product in documents]
+        return Message(
+            role="assistant",
+            content=message,
+            products=product_cards
+        )
+
+    @staticmethod
+    async def handle_no_documents_found(action, conversation):
+        if action.embedding_query:
+            job = await JobService.search_amazon_products(action.embedding_query, conversation.user_id,
+                                                          action.user_query)
+            if job:
+                return "No similar products found in our database, we are searching Amazon for you, please wait..."
+        return "No similar products found, we may not have that product in our database yet"
+
+    @staticmethod
+    async def get_product_details(request_context: RequestContext) -> Message:
+        action = request_context.action
+        model = request_context.model
+        if LLMService.is_valid_product(action):
+            product = await LLMService.get_product_from_action(request_context, action.products[0])
             if product is None:
-                return ("Product details not found, if a search on amazon was previously initiated, we may still "
-                        "be gathering the details, please wait..., if issue persists, please try again later.")
-            # A bit too complicated for now can be added in future features
-            # if not product:
-            #     url = f"https://www.amazon.com/dp/{action_response.product_id}"
-            #     await JobService.get_product_details(user_id=user_id, action=action_response, urls=[url])
-            #     return "Gathering product details, please wait..."
-            response = await LLMService.product_chat(product.dict(), action_response.user_query, model)
+                return Message(
+                    role="assistant",
+                    content="Product details not found, if a search on amazon was previously initiated, we may still "
+                            "be gathering the details, please wait..., if issue persists, please try again later."
+                )
+            response = await LLMService.product_chat(product.dict(), action, request_context, model)
             product_identifier = product_identifier_serializer(product.dict())
-            return {"related_products": [product_identifier], "message": response}
-        elif action_response.embedding_query and action_response.embedding_query != "":
-            embedding = await LLMService.create_embedding(action_response.embedding_query)
-            excludes = [
-                "_id",
-                "reviews",
-                "embedding",
-                "qa"
-            ]
-            documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(), embedding,
-                                                                          excludes,
-                                                                          action_response.embedding_query, 1)
+            return Message(
+                role="assistant",
+                content=response,
+                related_products=[product_identifier]
+            )
+        elif action.embedding_query and action.embedding_query != "":
+            documents, message = await LLMService.find_similar_products(request_context, 1)
             if len(documents) == 0:
-                return ("No similar product found, we may not have that product in our database yet, "
-                        "try using the link feature to add it")
+                return Message(
+                    role="assistant",
+                    content="No similar product found, we may not have that product in our database yet, "
+                            "try using the link feature to add it"
+                )
             product = documents[0]
             productCard = ProductCard(**product)
-            response = await LLMService.product_chat(product, action_response.user_query, model)
-            return {"products": [productCard], "message": response}
+            response = await LLMService.product_chat(product, action, request_context, model)
+            return Message(
+                role="assistant",
+                content=response,
+                products=[productCard]
+            )
 
     @staticmethod
-    async def compare_products(action_response: ActionResponse, model: str, user_id: str):
-        # try:
-        if action_response.products and len(action_response.products) > 0:
-            if len(action_response.products) > 2:
-                return "You cannot compare more than 2 products at a time"
-            product1Id = action_response.products[0]["product_id"]
-            product2Id = action_response.products[1]["product_id"]
-            excludes = [
-                "_id",
-                "embedding",
-                "qa"
-            ]
-            product1 = None
-            product2 = None
-            if product1Id != "":
-                product1 = await ProductService.get_product_by_id(product1Id)
-                # A bit too complicated for now can be added in future features
-                # if not product1:
-                #     url1 = f"https://www.amazon.com/dp/{product1Id}"
-                #     url2 = f"https://www.amazon.com/dp/{product2Id}"
-                #     await JobService.get_product_details(user_id=user_id, action=action_response, urls=[url1, url2])
-                #     return "Gathering product details, please wait..."
-                product1 = product1.dict()
-            else:
-                product1Name = action_response.products[0]["product_name"]
-                if product1Name != "":
-                    product1_embedding = await LLMService.create_embedding(product1Name)
-                    product1_documents, message = await LLMService.find_similar_embeddings(
-                        Product.get_motor_collection(),
-                        product1_embedding,
-                        excludes, action_response.embedding_query, 1, model)
-                    if len(product1_documents) == 0:
-                        return (
-                            "No similar product found, we may not have that product in our database yet, "
-                            "try using the link feature to add it")
-                    product1 = product1_documents[0]
+    async def get_product_from_action(request_context, action_product) -> Union[Product, None]:
+        product_id = action_product.get("product_id", "")
+        if product_id:
+            product = await ProductService.get_product_by_id(product_id)
+            if product:
+                return product
+            return None
+        product_name = action_product.get("product_name", "")
+        if product_name:
+            return await LLMService.find_product_by_name(request_context=request_context, product_name=product_name)
+        return None
 
-            if product2Id != "":
-                product2 = await ProductService.get_product_by_id(product2Id)
-                # A bit too complicated for now can be added in future features
-                # if not product2:
-                #     url1 = f"https://www.amazon.com/dp/{product1Id}"
-                #     url2 = f"https://www.amazon.com/dp/{product2Id}"
-                #     await JobService.get_product_details(user_id=user_id, action=action_response, urls=[url1, url2])
-                #     return "Gathering product details, please wait..."
-                product2 = product2.dict()
-            else:
-                product2Name = action_response.products[1]["product_name"]
-                product2_embedding = await LLMService.create_embedding(product2Name)
-
-                product2_documents, message = await LLMService.find_similar_embeddings(
-                    Product.get_motor_collection(),
-                    product2_embedding,
-                    excludes,
-                    action_response.embedding_query,
-                    1, model)
-                if len(product2_documents) == 0:
-                    return ("No similar product found, we may not have that product in our database yet, "
-                            "try using the link feature to add it")
-                product2 = product2_documents[0]
-            response = await LLMService.compare(product1, product2, action_response.user_query, model)
-            product1Identifier = product_identifier_serializer(product1)
-            product2Identifier = product_identifier_serializer(product2)
-            return {"related_products": [product1Identifier, product2Identifier], "message": response}
+    @staticmethod
+    async def compare_products(request_context: RequestContext) -> Message:
+        action = request_context.action
+        if not action.products or len(action.products) != 2:
+            message = Message(
+                role="assistant",
+                content="Please provide two products to compare"
+            )
+            return message
+        product1 = await LLMService.get_product_from_action(request_context, action.products[0])
+        product2 = await LLMService.get_product_from_action(request_context, action.products[1])
+        if not product1 or not product2:
+            message = Message(
+                role="assistant",
+                content="One or both products were not found in the database, try using the link feature to add them "
+                        "or search Amazon."
+            )
+            return message
+        product1 = product1.dict()
+        product2 = product2.dict()
+        response = await LLMService.compare(product1, product2, action.user_query, request_context.model)
+        product1_identifier = product_identifier_serializer(product1)
+        product2_identifier = product_identifier_serializer(product2)
+        message = Message(
+            role="assistant",
+            content=response,
+            related_products=[product1_identifier, product2_identifier]
+        )
+        return message
 
     # TODO: Refactor this to return a Message object
     @staticmethod
-    async def get_action_from_llm(query, conversation: Conversation, model):
-        # try:
+    async def get_action_from_llm(query, conversation: Conversation, model) -> Message:
         response = await LLMService.manager(query, conversation, model)
         if "action" not in response:
             return response
-        actionResponse = ActionResponse(**response)
-        match actionResponse.action:
+        action = ActionResponse(**response)
+        request_context = RequestContext(action=action, conversation=conversation, model=model,
+                                         user_query=query)
+        match action.action:
             case "none":
                 logger.info("In none case")
-                if actionResponse.response:
-                    return actionResponse.response
+                if action.response:
+                    return Message(
+                        role="assistant",
+                        content=action.response
+                    )
             case "more_info":
                 logger.info("In more_info case")
-                if actionResponse.response:
-                    return actionResponse.response
+                if action.response:
+                    return Message(
+                        role="assistant",
+                        content=action.response
+                    )
             case "get_product_details":
                 logger.info("In get_product_details case")
-                return await LLMService.get_product_details(actionResponse, model, conversation.user_id)
+                return await LLMService.get_product_details(request_context)
             case "find_similar":
                 logger.info("In find_similar case")
-                return await LLMService.find_similar(actionResponse, model, conversation.user_id)
+                return await LLMService.find_similar(request_context)
             case "compare_products":
                 logger.info("In compare_products case")
-                return await LLMService.compare_products(actionResponse, model, conversation.user_id)
+                return await LLMService.compare_products(request_context)
             case "search":
                 logger.info("In search case")
-
-                if actionResponse.embedding_query and actionResponse.embedding_query != "":
-                    embedding = await LLMService.create_embedding(actionResponse.embedding_query)
-                    excludes = [
-                        "_id",
-                        "reviews",
-                        "embedding",
-                        "qa"
-                    ]
-                    documents, message = await LLMService.find_similar_embeddings(Product.get_motor_collection(),
-                                                                                  embedding,
-                                                                                  excludes,
-                                                                                  actionResponse.embedding_query, 5,
-                                                                                  model)
-                    if len(documents) == 0:
-                        job = await JobService.search_amazon_products(actionResponse.embedding_query,
-                                                                      conversation.user_id,
-                                                                      query)
-                        if job:
-                            return ("No similar products found in our database, we are searching Amazon for you, "
-                                    "please wait...")
-                        return "No similar products found, we may not have that product in our database yet"
-                    productCards = []
-                    for product in documents:
-                        productCards.append(ProductCard(**product))
-                    return {"products": productCards, "message": message}
-        return "I'm sorry, I don't understand that request"
+                if action.embedding_query and action.embedding_query != "":
+                    return await LLMService.process_similarity_search(request_context, 10)
+            case "search_amazon":
+                logger.info("In search_amazon case")
+                job = await JobService.search_amazon_products(action.embedding_query, conversation.user_id, query)
+                if job:
+                    return Message(
+                        role="assistant",
+                        content="Searching Amazon for you, please wait..."
+                    )
+        return Message(
+            role="assistant",
+            content="I'm sorry, I encountered an error while processing your request"
+        )

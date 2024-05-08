@@ -49,3 +49,10 @@ Analyze the user's query and the provided product data. Identify products that b
 - Focus on matching the user's key requirements, such as product type, features, and price range.
 - If a product does not meet a crucial aspect of the user's query, it should not be considered a match.
 - Use the `embedding_text` details for precise matching, considering synonyms and product attributes.
+
+
+### Conversation:
+{{conversation}}
+
+### Products:
+{{products}}
