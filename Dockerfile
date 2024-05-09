@@ -19,4 +19,5 @@ COPY prompts /app/prompts
 EXPOSE 8000
 
 # Command to run the FastAPI app
-CMD uvicorn app.app:app --host 0.0.0.0 --port $PORT
+CMD uvicorn app.app:app --host 0.0.0.0 --port 8000
+
