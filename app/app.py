@@ -124,6 +124,11 @@ async def exception_handler(request: Request, exc: Exception):
     )
 
 
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to AskTheShelf!"}
+
+
 app.include_router(router)
 # Add CORSMiddleware to the application
 app.add_middleware(
@@ -133,5 +138,5 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
 )
-app.add_middleware(AuthMiddleware, allow_routes=["/users", "/api/v1/docs", "/api/v1/openapi.json", "/robots.txt",
+app.add_middleware(AuthMiddleware, allow_routes=["/", "/users", "/api/v1/docs", "/api/v1/openapi.json", "/robots.txt",
                                                  "/api/v1/scrapy/update", "/test"])
