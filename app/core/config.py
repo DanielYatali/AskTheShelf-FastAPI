@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = config('GEMINI_API_KEY', cast=str)
     SCRAPER_URL: str = config('SCRAPER_URL', cast=str)
     GROQ_API_KEY: str = config('GROQ_API_KEY', cast=str)
+    BESTBUY_API_KEY: str = config('BESTBUY_API_KEY', cast=str)
 
     class Config:
         case_sensitive = True
